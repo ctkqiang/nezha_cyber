@@ -1,3 +1,4 @@
 /target
 .trae
 .env
+deploy.sh
