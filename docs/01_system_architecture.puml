@@ -1,0 +1,121 @@
+@startuml 哪吒网络安全-系统架构总览
+' =============================================================================
+' 哪吒网络安全 TUI —— 系统架构总览图
+' 描述: 从用户终端到 DeepSeek API 的完整系统组件及其交互关系
+' =============================================================================
+
+title 哪吒网络安全 (Nezha Cyber) —— 系统架构总览
+
+skinparam backgroundColor #121218
+skinparam defaultFontColor #DCDCE6
+skinparam arrowColor #00D4FF
+skinparam componentBackgroundColor #1E1E2E
+skinparam componentBorderColor #32324B
+skinparam packageBorderColor #00D4FF
+skinparam packageBackgroundColor #16161E
+skinparam noteBackgroundColor #1A1A2E
+skinparam noteBorderColor #00D4FF
+skinparam rectangleBorderColor #32324B
+
+' =============================================================================
+' 外部系统
+' =============================================================================
+actor "用户\n(红队操作员)" as User
+
+cloud "DeepSeek API\n(api.deepseek.com)" as DeepSeekAPI {
+    [Chat Completions\n/v1/chat/completions] as ChatAPI
+    [SSE 流式响应] as SSE
+}
+
+cloud "外部工具" as ExternalTools {
+    [Nmap 扫描器] as Nmap
+    [Metasploit] as MSF
+    [Burp Suite] as Burp
+    [自定义脚本] as CustomScripts
+}
+
+' =============================================================================
+' 应用程序核心
+' =============================================================================
+package "哪吒网络安全 TUI 应用" as AppCore {
+    rectangle "终端 UI 层" as UILayer {
+        [主题系统\n(theme.rs)] as Theme
+        [布局计算\n(layout.rs)] as Layout
+        [渲染引擎\n(render.rs)] as Render
+        [自定义组件\n(widgets/)] as Widgets
+    }
+
+    rectangle "应用核心层" as AppLayer {
+        [App 全局状态\n(app.rs)] as AppState
+        [事件处理\n(update())] as Update
+        [Action 枚举\n(action.rs)] as ActionEnum
+    }
+
+    rectangle "API 通信层" as APILayer {
+        [DeepSeek 客户端\n(deepseek.rs)] as DeepSeekClient
+        [数据类型定义\n(types.rs)] as TypesDef
+        [SSE 流解析器] as SSEParser
+    }
+
+    rectangle "智能体管理层" as AgentLayer {
+        [Agent 配置\n(config.rs)] as AgentConfig
+        [YAML 解析器] as YAMLParser
+        [工具注册表] as ToolRegistry
+    }
+}
+
+' =============================================================================
+' 数据通道
+' =============================================================================
+package "异步运行时 (tokio)" as TokioRuntime {
+    [mpsc 无界通道] as MPSCChannel
+    [TCP 连接池\n(reqwest)] as HTTPPool
+    [Tick 定时器\n(100ms)] as TickTimer
+}
+
+' =============================================================================
+' 连接关系
+' =============================================================================
+User -down-> UILayer : 键盘输入 / 鼠标操作
+UILayer -down-> AppLayer : Action 事件
+AppLayer -down-> APILayer : 发起 API 请求
+
+APILayer -right-> TokioRuntime : 异步后台任务
+TokioRuntime -right-> DeepSeekAPI : HTTPS + SSE
+
+DeepSeekAPI -down-> TokioRuntime : 流式响应 (StreamChunk)
+TokioRuntime -down-> AppLayer : Action 事件推回
+
+AppLayer -down-> UILayer : 触发重绘
+
+AgentLayer -up-> AppLayer : 提供 Agent 配置
+AgentLayer -left-> ExternalTools : 工具调用执行
+
+' =============================================================================
+' 配置与存储
+' =============================================================================
+package "配置与存储" as Config {
+    [.env 环境变量] as DotEnv
+    [config.yaml] as ConfigYAML
+    [agents.yaml] as AgentsYAML
+    database "会话历史\n(内存 Vec<Message>)" as SessionStore
+}
+
+Config -up-> AppLayer : 启动时加载
+Config -up-> AgentLayer : 智能体定义
+
+' =============================================================================
+' 图例
+' =============================================================================
+legend bottom
+  <b>颜色说明:</b>
+  |= 青色 |= 数据流与关键连接 |
+  |= 蓝色 |= 应用内部组件 |
+  |= 灰色 |= 外部系统 |
+  <b>设计模式:</b> Elm Architecture (Model-Update-View)
+  <b>通信协议:</b> REST + SSE (Server-Sent Events)
+  <b>异步运行时:</b> tokio (multi-threaded)
+endlegend
+
+center footer 哪吒网络安全 TUI · DeepSeek 驱动 · 红队辅助工具
+@enduml

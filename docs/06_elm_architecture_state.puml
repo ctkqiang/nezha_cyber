@@ -1,0 +1,105 @@
+@startuml 哪吒网络安全-Elm架构状态机
+' =============================================================================
+' 哪吒网络安全 TUI —— Elm Architecture 状态机图
+' 描述: App 全局状态在不同 Action 驱动下的状态转移关系
+' =============================================================================
+
+title 哪吒网络安全 —— Elm Architecture 状态转移图
+
+skinparam backgroundColor #121218
+skinparam defaultFontColor #DCDCE6
+skinparam arrowColor #00D4FF
+skinparam stateBackgroundColor #1E1E2E
+skinparam stateBorderColor #32324B
+skinparam stateFontColor #DCDCE6
+skinparam noteBackgroundColor #1A1A2E
+skinparam noteBorderColor #00D4FF
+skinparam startColor #00FF78
+skinparam endColor #FF5050
+
+state "程序初始化\n(Startup)" as Init {
+    state "加载配置\nload_agents/load_app_config" as LoadConfig
+    state "终端接管\nraw mode + alt screen" as TerminalSetup
+    state "创建状态\nApp::new()" as CreateApp
+    state "进入循环\nblock_on(async)" as EnterLoop
+
+    [*] --> LoadConfig
+    LoadConfig --> TerminalSetup
+    TerminalSetup --> CreateApp
+    CreateApp --> EnterLoop
+}
+
+state "事件循环\n(Event Loop)" as EventLoop {
+    state "等待事件\npoll(timeout)" as WaitEvent
+    state "处理键盘\nprocess_key()" as ProcessKey
+    state "文本输入\n追加字符" as TextInput
+    state "Tick\n100ms 间隔" as Tick
+    state "Resize\n窗口尺寸变更" as Resize
+    state "API 响应\nmpsc 通道" as ApiResponse
+    state "状态更新\nupdate()" as Update
+    state "界面渲染\ntransport.draw()" as Render
+
+    EnterLoop --> WaitEvent
+
+    WaitEvent --> ProcessKey : KeyEvent
+    WaitEvent --> Tick : 超时到期
+    WaitEvent --> Resize : ResizeEvent
+    WaitEvent --> ApiResponse : mpsc 消息
+
+    ProcessKey --> TextInput : 普通字符
+    ProcessKey --> Update : 命令快捷键
+
+    TextInput --> Render
+
+    Tick --> Update
+    Resize --> Update
+    ApiResponse --> Update
+
+    Update --> Render
+    Render --> WaitEvent
+}
+
+state "流式对话状态\n(Streaming Sub-state)" as Streaming {
+    state "空闲\n(Idle)" as Idle
+    state "等待首Token\n(WaitTTFT)" as WaitTTFT
+    state "流式接收\n(Receiving)" as Receiving
+    state "工具调用中\n(ToolRunning)" as ToolRunning
+
+    [*] --> Idle
+
+    Idle --> WaitTTFT : StreamStart
+    WaitTTFT --> Receiving : StreamChunk (首个)
+    Receiving --> Receiving : StreamChunk (持续)
+    Receiving --> Idle : StreamDone
+    Receiving --> Idle : StreamError
+    Receiving --> ToolRunning : ToolCallRequest
+    ToolRunning --> Receiving : ToolCallResponse
+    ToolRunning --> Idle : StreamDone
+}
+
+state "退出\n(Shutdown)" as Shutdown {
+    state "清理终端\ncleanup_terminal()" as Cleanup
+    state "程序终止\n(Exit 0)" as Exit
+
+    Update --> Cleanup : should_quit == true
+    Cleanup --> Exit
+}
+
+note right of EventLoop
+  <b>性能特征:</b>
+  
+  | Action | 响应延迟 |
+  | KeyEvent | < 1ms |
+  | Tick | 100ms 间隔 |
+  | Resize | < 1ms |
+  | StreamChunk | 流式，逐条到达 |
+  
+  <b>线程模型:</b>
+  - 主线程: 事件循环 + UI 渲染
+  - tokio 工作线程: HTTP 请求
+  - 所有状态变更在主线程串行
+  - 无 Mutex，无竞态条件
+end note
+
+center footer 哪吒网络安全 TUI · Elm Architecture · 完整状态转移
+@enduml

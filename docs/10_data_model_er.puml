@@ -1,0 +1,327 @@
+@startuml 哪吒网络安全-核心数据模型ER
+' =============================================================================
+' 哪吒网络安全 TUI —— 核心数据模型 E-R 图
+' 描述: 应用内所有核心数据结构及其关系，涵盖 App 状态、消息系统、API 类型、Agent 配置
+' =============================================================================
+
+title 哪吒网络安全 —— 核心数据模型实体关系图
+
+skinparam backgroundColor #121218
+skinparam defaultFontColor #DCDCE6
+skinparam arrowColor #00D4FF
+skinparam entityBackgroundColor #1E1E2E
+skinparam entityBorderColor #32324B
+skinparam packageBorderColor #00D4FF
+skinparam packageBackgroundColor #16161E
+skinparam noteBackgroundColor #1A1A2E
+skinparam noteBorderColor #00D4FF
+
+' =============================================================================
+' 应用状态域
+' =============================================================================
+package "应用状态域 (app.rs)" as AppDomain {
+    entity "App\n全局状态" as App {
+        * tabs: Vec<Tab>
+        --
+        * active_tab: usize
+        * sidebar_visible: bool
+        * command_palette_open: bool
+        * focus: Focus
+        * theme: String
+        * should_quit: bool
+        * status_message: String
+        * pricing: Pricing
+    }
+
+    entity "Tab\n会话标签页" as Tab {
+        * id: usize
+        * title: String
+        * model: String
+        * agent_name: String
+        * messages: Vec<Message>
+        * total_usage: Usage
+        * input_buffer: String
+        * scroll_offset: usize
+        * auto_scroll: bool
+        * pending_tool_calls: HashMap<String, ToolCallStatus>
+    }
+
+    enum "Focus\n焦点枚举" as Focus {
+        ChatInput
+        Sidebar
+        MessageList
+        CommandPalette
+    }
+
+    enum "ToolCallStatus\n工具调用状态" as ToolCallStatus {
+        Pending
+        Running
+        Success { result: String }
+        Failed { error: String }
+    }
+
+    enum "Action\n事件枚举\n(20+ 变体)" as ActionEnum {
+        Key(KeyEvent)
+        SubmitMessage(String)
+        SwitchTab(usize)
+        NewTab
+        CloseTab(usize)
+        ToggleSidebar
+        OpenCommandPalette
+        Tick
+        Resize(u16, u16)
+        Shutdown
+        StreamStart { tab_id, message_id }
+        StreamChunk { tab_id, message_id, chunk }
+        StreamDone { tab_id, message_id, content, usage }
+        StreamError { tab_id, message_id, error }
+        ToolCallRequest { tab_id, call_id, name, args }
+        ToolCallResponse { tab_id, call_id, result }
+        ConfirmToolCall(ToolCallConfirmation)
+        ChangeTheme(String)
+        ChangeModel { tab_id, model }
+    }
+
+    struct "ToolCallConfirmation\n工具确认" as ToolCallConfirmation {
+        tab_id: usize
+        call_id: String
+        name: String
+        args: Value
+    }
+
+    App ||--o{ Tab : "1 to N\n标签页集合"
+    App ||--|{ Focus : "焦点状态"
+    Tab ||--o{ Message : "消息历史"
+    Tab ||--|{ ToolCallStatus : "工具调用"
+}
+
+' =============================================================================
+' 消息与对话域
+' =============================================================================
+package "消息与对话域 (api/types.rs)" as MessageDomain {
+    entity "Message\n对话消息" as Message {
+        * id: Uuid
+        * role: Role
+        * content: String
+        --
+        tool_calls: Option<Vec<ToolCall>>
+        tool_call_id: Option<String>
+        name: Option<String>
+    }
+
+    enum "Role\n消息角色" as Role {
+        System
+        User
+        Assistant
+        Tool
+    }
+
+    entity "ToolCall\n工具调用" as ToolCall {
+        * id: String
+        * call_type: String
+        * function: ToolFunction
+    }
+
+    entity "ToolFunction\n工具函数" as ToolFunction {
+        * name: String
+        * arguments: String
+    }
+
+    Message ||--|{ Role
+    Message ||--o{ ToolCall
+    ToolCall ||--|| ToolFunction
+}
+
+' =============================================================================
+' API 通信域
+' =============================================================================
+package "API 通信域 (api/types.rs)" as APIDomain {
+    entity "ChatCompletionRequest\nAPI 请求" as ChatReq {
+        * model: String
+        * messages: Vec<ApiMessage>
+        * stream: bool
+        --
+        tools: Option<Vec<Tool>>
+        temperature: Option<f32>
+        max_tokens: Option<u32>
+    }
+
+    entity "ApiMessage\nAPI 消息格式" as ApiMessage {
+        * role: String
+        * content: String
+        --
+        tool_calls: Option<Vec<ToolCall>>
+        tool_call_id: Option<String>
+        name: Option<String>
+    }
+
+    entity "Tool\n工具定义" as Tool {
+        * tool_type: String
+        * function: FunctionDefinition
+    }
+
+    entity "FunctionDefinition\n函数定义" as FunctionDefinition {
+        * name: String
+        * description: String
+        * parameters: Value
+    }
+
+    entity "StreamResponse\nSSE 流响应" as StreamResponse {
+        * id: String
+        * object: String
+        * created: u64
+        * model: String
+        * choices: Vec<StreamChoice>
+        --
+        usage: Option<Usage>
+    }
+
+    entity "StreamChoice\n流选择" as StreamChoice {
+        * index: usize
+        * delta: StreamDelta
+        --
+        finish_reason: Option<String>
+    }
+
+    entity "StreamDelta\n流增量" as StreamDelta {
+        role: Option<String>
+        content: Option<String>
+        tool_calls: Option<Vec<StreamToolCallDelta>>
+    }
+
+    entity "PendingToolCall\n累积工具调用" as PendingToolCall {
+        * id: String
+        * name: String
+        * arguments: String
+    }
+
+    ChatReq ||--o{ ApiMessage
+    ChatReq ||--o{ Tool
+    Tool ||--|| FunctionDefinition
+    StreamResponse ||--o{ StreamChoice
+    StreamChoice ||--|| StreamDelta
+    ApiMessage ..|> Message : "From trait 转换"
+}
+
+' =============================================================================
+' Token 与计费域
+' =============================================================================
+package "Token 与计费域" as TokenDomain {
+    entity "Usage\nToken 用量" as Usage {
+        * prompt_tokens: u64
+        * completion_tokens: u64
+        * total_tokens: u64
+    }
+
+    entity "Pricing\n定价模型" as Pricing {
+        * prompt_price_per_m: f64
+        * completion_price_per_m: f64
+    }
+
+    Usage ..> Pricing : "cost(&pricing) -> f64"
+}
+
+' =============================================================================
+' Agent 配置域
+' =============================================================================
+package "Agent 配置域 (agent/config.rs)" as AgentDomain {
+    entity "AgentsConfig\n多 Agent 配置" as AgentsConfig {
+        * agents: Vec<AgentConfig>
+    }
+
+    entity "AgentConfig\n智能体配置" as AgentConfig {
+        * name: String
+        * description: String
+        * system_prompt: String
+        * model: String
+        --
+        tools: Vec<AgentToolConfig>
+    }
+
+    entity "AgentToolConfig\n工具配置" as AgentToolConfig {
+        * name: String
+        * description: String
+        * parameters: Value
+    }
+
+    entity "AppConfig\n应用配置" as AppConfigStruct {
+        * api_base: String
+        * api_key: String
+        * default_model: String
+        --
+        default_pricing: Option<DefaultPricing>
+    }
+
+    entity "DefaultPricing\n默认定价" as DefaultPricingStruct {
+        * prompt_price_per_m: f64
+        * completion_price_per_m: f64
+    }
+
+    AgentsConfig ||--o{ AgentConfig
+    AgentConfig ||--o{ AgentToolConfig
+    AppConfigStruct ||--|| DefaultPricingStruct
+    AgentToolConfig ..> FunctionDefinition : "转换为"
+}
+
+' =============================================================================
+' UI 主题域
+' =============================================================================
+package "UI 主题域 (ui/theme.rs)" as ThemeDomain {
+    entity "Theme\n颜色主题" as Theme {
+        * name: String
+        * bg: Color
+        * fg: Color
+        * accent: Color
+        * accent_dim: Color
+        * sidebar_bg: Color
+        * sidebar_fg: Color
+        * input_bg: Color
+        * input_border: Color
+        * user_msg_color: Color
+        * assistant_msg_color: Color
+        * error_color: Color
+        * success_color: Color
+        * warning_color: Color
+        * tab_active_bg: Color
+        * tab_inactive_bg: Color
+        * border_color: Color
+    }
+}
+
+' =============================================================================
+' 跨域关系
+' =============================================================================
+App ||--|| Pricing : "计费配置"
+Tab ||--|| Usage : "Token 累计"
+App ||--|| Theme : "当前主题"
+App ||--o{ AgentConfig : "可用智能体"
+App ..> ActionEnum : "接收事件"
+
+' =============================================================================
+' DeepSeek 客户端域
+' =============================================================================
+entity "DeepSeekClient\nAPI 客户端" as DeepSeekClient {
+    * config: Arc<DeepSeekConfig>
+    * client: Client
+}
+
+entity "DeepSeekConfig\n客户端配置" as DeepSeekConfig {
+    * api_base: String
+    * api_key: String
+    * model: String
+}
+
+DeepSeekClient ||--|| DeepSeekConfig
+App ||--|| DeepSeekClient : "持有客户端"
+DeepSeekClient ..> ChatReq : "构建请求"
+DeepSeekClient ..> StreamResponse : "解析响应"
+DeepSeekClient ..> PendingToolCall : "累积工具调用"
+
+' Row: DeepSeekConfig metadata note
+note bottom of DeepSeekConfig
+  Arc<DeepSeekConfig> 共享所有权
+  支持运行时 set_model() 修改
+end note
+
+center footer 哪吒网络安全 TUI · 核心数据模型 E-R · 5 个领域 18 个实体
+@enduml

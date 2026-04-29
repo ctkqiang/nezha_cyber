@@ -1,0 +1,119 @@
+@startuml 哪吒网络安全-API流式对话
+' =============================================================================
+' 哪吒网络安全 TUI —— DeepSeek API 流式对话序列图
+' 描述: 从用户按 Enter 到完整响应渲染的 SSE 流式对话全流程
+' =============================================================================
+
+title 哪吒网络安全 —— DeepSeek API 流式对话序列图
+
+skinparam backgroundColor #121218
+skinparam defaultFontColor #DCDCE6
+skinparam sequenceArrowColor #00D4FF
+skinparam participantBackgroundColor #1E1E2E
+skinparam participantBorderColor #32324B
+skinparam noteBackgroundColor #1A1A2E
+skinparam noteBorderColor #00D4FF
+skinparam lifeLineColor #32324B
+
+actor "用户" as User
+participant "UI 输入区\n(process_key)" as Input
+participant "App 状态\n(update())" as App
+participant "DeepSeekClient\n(stream_chat)" as Client
+participant "Tokio 后台任务\n(tokio::spawn)" as TokioTask
+participant "DeepSeek API\n(api.deepseek.com)" as API
+
+== 1. 用户输入与预处理 ==
+
+User -> Input : 键入消息 "请分析这个漏洞"
+Input -> Input : Enter 键触发
+Input -> App : Action::SubmitMessage("请分析这个漏洞")
+
+App -> App : 创建 User Message\n(Uuid, Role::User, content)
+App -> App : 追加到 tab.messages
+App -> App : 清空 input_buffer
+
+== 2. 构建 API 请求 ==
+
+App -> App : 将 tab.messages 转为 Vec<ApiMessage>
+App -> App : 从 AgentConfig 获取 tools 定义
+
+App -> Client : stream_chat(tx, tab_id, messages, tools)
+
+note right of Client
+  请求体 ChatCompletionRequest:
+  - model: "deepseek-chat"
+  - messages: [...]
+  - tools: [...]
+  - stream: true
+  - max_tokens: 4096
+end note
+
+== 3. 发起流式请求 (后台任务) ==
+
+Client -> TokioTask : tokio::spawn(async { ... })
+activate TokioTask
+
+TokioTask -> API : POST /v1/chat/completions\n(HTTPS + SSE)
+activate API
+
+TokioTask -> App : tx.send(StreamStart { tab_id, message_id })
+App -> App : 创建空 Assistant Message\n追加到 tab.messages
+
+== 4. SSE 流逐行解析 ==
+
+group SSE 流式数据传输
+    loop 每个 SSE chunk
+        API --> TokioTask : data: {"id":"...","choices":[{"delta":{"content":"这个"}}]}
+
+        TokioTask -> TokioTask : 逐行解析\n跳过空行\n跳过 "data: [DONE]"\n剥离 "data: " 前缀\nJSON 反序列化
+
+        TokioTask -> TokioTask : process_stream_choice()
+
+        alt delta.content 有值
+            TokioTask -> App : tx.send(StreamChunk { tab_id, message_id, chunk: "这个" })
+            App -> App : 查找 message_id\n追加 chunk 到 content
+        else delta.tool_calls 有值
+            TokioTask -> TokioTask : apply_tool_call_delta()\n累积 id/name/arguments
+        end
+
+        App -> App : 触发重绘
+    end
+end
+
+API --> TokioTask : data: [DONE]
+
+== 5. 流完成处理 ==
+
+TokioTask -> API : 连接关闭
+deactivate API
+
+TokioTask -> TokioTask : 提取 usage (prompt_tokens, completion_tokens)
+
+TokioTask -> App : tx.send(StreamDone {\n  tab_id, message_id,\n  content, usage\n})
+
+App -> App : 累加 Token 用量\n(tab.total_usage)
+App -> App : 计算费用\n(usage.cost(&pricing))
+App -> App : 更新 status_message\n("完成 - Token: 150P + 380C | 费用: ¥0.0034")
+
+deactivate TokioTask
+
+== 6. 最终渲染 ==
+
+App -> App : 触发重绘
+Input -> User : 屏幕显示完整 AI 回复
+
+note over User, API
+  <b>全流程耗时分解:</b>
+  - 请求构建: < 1ms
+  - 网络延迟 (TCP+TLS): ~50-200ms
+  - 首个 Token (TTFT): ~200-800ms
+  - 流式传输: 取决于 Token 数量
+  
+  <b>错误处理路径:</b>
+  - HTTP 状态码 ≠ 200: StreamError
+  - 流读取异常: StreamError
+  - JSON 解析失败: 跳过该行，继续
+end note
+
+center footer 哪吒网络安全 TUI · SSE 流式对话 · 完整生命周期
+@enduml

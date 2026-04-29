@@ -1,0 +1,129 @@
+@startuml 哪吒网络安全-模块依赖拓扑
+' =============================================================================
+' 哪吒网络安全 TUI —— 模块依赖拓扑图
+' 描述: 展示 src/ 下所有 .rs 文件的编译期依赖关系，箭头指向被依赖者
+' =============================================================================
+
+title 哪吒网络安全 —— 源代码模块依赖拓扑图
+
+skinparam backgroundColor #121218
+skinparam defaultFontColor #DCDCE6
+skinparam arrowColor #00D4FF
+skinparam componentBackgroundColor #1E1E2E
+skinparam componentBorderColor #32324B
+skinparam packageBorderColor #00D4FF
+skinparam packageBackgroundColor #16161E
+skinparam noteBackgroundColor #1A1A2E
+skinparam noteBorderColor #00D4FF
+
+' =============================================================================
+' 层 0: 基础类型 (无依赖)
+' =============================================================================
+package "基础类型层 (Layer 0)\n无内部依赖" as Layer0 #1A2A1A {
+    [action.rs\nAction 枚举\nToolCallConfirmation] as ActionMod
+    [ui/theme.rs\nTheme 定义\n2套配色方案] as ThemeMod
+}
+
+' =============================================================================
+' 层 1: API 类型定义
+' =============================================================================
+package "API 类型层 (Layer 1)\n依赖: action.rs" as Layer1 {
+    [api/types.rs\nMessage, Role\nUsage, Pricing\nStreamResponse\nToolCall, PendingToolCall\n30+ 数据结构] as TypesMod
+}
+
+' =============================================================================
+' 层 2: API 客户端
+' =============================================================================
+package "API 客户端层 (Layer 2)\n依赖: types.rs, action.rs" as Layer2 {
+    [api/deepseek.rs\nDeepSeekClient\nstream_chat()\nSSE 流解析\n工具调用拼接] as DeepseekMod
+}
+
+' =============================================================================
+' 层 3: Agent 配置
+' =============================================================================
+package "Agent 配置层 (Layer 3)\n依赖: types.rs" as Layer3 {
+    [agent/config.rs\nAgentConfig\nAgentsConfig\nAppConfig\nto_api_tools()] as AgentConfigMod
+}
+
+' =============================================================================
+' 层 4: 应用核心
+' =============================================================================
+package "应用核心层 (Layer 4)\n依赖: action.rs, deepseek.rs, agent/config.rs, types.rs" as Layer4 {
+    [app.rs\nApp 全局状态\nTab 会话\nFocus 枚举\nToolCallStatus\nupdate() 纯函数] as AppMod
+}
+
+' =============================================================================
+' 层 5: UI 渲染
+' =============================================================================
+package "UI 渲染层 (Layer 5)\n依赖: layout.rs, theme.rs, app.rs" as Layer5 {
+    [ui/render.rs\nrender() 入口\nrender_sidebar()\nrender_main_area()\nrender_command_palette()\n7 个渲染函数] as RenderMod
+    [ui/layout.rs\ncalculate()\nAppLayout 结构] as LayoutMod
+}
+
+' =============================================================================
+' 层 6: 程序入口
+' =============================================================================
+package "程序入口层 (Layer 6)\n依赖: 所有模块" as Layer6 {
+    [main.rs\nmain() 入口\n事件循环\n键盘处理\n配置加载] as MainMod
+}
+
+' =============================================================================
+' 依赖箭头 (箭头指向被依赖者)
+' =============================================================================
+
+' Layer 1 -> Layer 0
+TypesMod -down-> ActionMod : 依赖 Action::Usage
+
+' Layer 2 -> Layer 1, Layer 0
+DeepseekMod -down-> TypesMod : 依赖 Message, Usage, StreamResponse...
+DeepseekMod -down-> ActionMod : 发送 StreamStart/Chunk/Done/Error\nToolCallRequest/Response
+
+' Layer 3 -> Layer 1
+AgentConfigMod -down-> TypesMod : 依赖 Tool, FunctionDefinition
+
+' Layer 4 -> Layer 0, Layer 2, Layer 3, Layer 1
+AppMod -down-> ActionMod : 匹配所有 Action 变体
+AppMod -down-> DeepseekMod : 持有 DeepSeekClient
+AppMod -down-> AgentConfigMod : 持有 AgentConfig, AppConfig
+AppMod -down-> TypesMod : 持有 Message, Usage, Pricing...
+
+' Layer 5 -> Layer 0
+RenderMod -down-> ThemeMod : 读取 Theme 颜色
+LayoutMod -down-> ThemeMod : (布局不依赖主题)
+
+' Layer 5 -> Layer 4
+RenderMod -down-> AppMod : 读取 App 状态渲染
+LayoutMod -down-> AppMod : (布局不依赖 App)
+
+' Layer 5 -> Layer 5
+RenderMod -down-> LayoutMod : 使用 AppLayout 区域
+
+' Layer 6 -> All
+MainMod -down-> ActionMod : 使用 Action 枚举
+MainMod -down-> DeepseekMod : (尚未直接调用)
+MainMod -down-> AgentConfigMod : 加载配置
+MainMod -down-> AppMod : 创建 App 并调用 update()
+MainMod -down-> RenderMod : 调用 render()
+MainMod -down-> ThemeMod : (通过 render 间接使用)
+
+' =============================================================================
+' 图例
+' =============================================================================
+legend bottom
+  <b>层级说明:</b>
+  |= Layer 0 |= 基础类型层 | 无内部依赖，可被任意层引用 |
+  |= Layer 1 | API 类型层 | 仅依赖 Layer 0 |
+  |= Layer 2 | API 客户端层 | 依赖 Layer 0, 1 |
+  |= Layer 3 | Agent 配置层 | 依赖 Layer 0, 1 |
+  |= Layer 4 | 应用核心层 | 依赖 Layer 0-3，聚合所有状态 |
+  |= Layer 5 | UI 渲染层 | 依赖 Layer 0, 4，纯函数无副作用 |
+  |= Layer 6 | 程序入口层 | 依赖所有层，编排整个生命周期 |
+  
+  <b>关键设计约束:</b>
+  - 禁止循环依赖 (DAG 结构)
+  - UI 层不修改状态 (纯渲染)
+  - 低层不依赖高层
+end legend
+
+center footer 哪吒网络安全 TUI · 模块依赖拓扑 · 6 层 DAG 结构
+@enduml

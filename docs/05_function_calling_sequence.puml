@@ -1,0 +1,124 @@
+@startuml 哪吒网络安全-工具调用全生命周期
+' =============================================================================
+' 哪吒网络安全 TUI —— Function Calling 工具调用全生命周期序列图
+' 描述: 从 LLM 返回 tool_calls 到用户确认并执行工具、反馈结果回 LLM 的完整流程
+' =============================================================================
+
+title 哪吒网络安全 —— Function Calling 工具调用全生命周期
+
+skinparam backgroundColor #121218
+skinparam defaultFontColor #DCDCE6
+skinparam sequenceArrowColor #00D4FF
+skinparam participantBackgroundColor #1E1E2E
+skinparam participantBorderColor #32324B
+skinparam noteBackgroundColor #1A1A2E
+skinparam noteBorderColor #00D4FF
+skinparam lifeLineColor #32324B
+
+actor "用户" as User
+participant "UI\n渲染层" as UI
+participant "App\n状态管理" as App
+participant "工具沙箱\n(Tool Sandbox)" as Sandbox
+participant "外部工具\n(Nmap/MSF/...)" as ExtTool
+
+collections "待处理工具\nHashMap<call_id, Status>" as PendingTools
+
+== 阶段一: 工具调用请求到达 ==
+
+App -> App : SSE 流解析出 tool_calls
+App -> PendingTools : insert(call_id, Pending)
+note right of PendingTools
+  状态机:
+  Pending → Running → Success/Failed
+end note
+
+App -> App : 累积 tool_call 数据\n(id + function.name + arguments)
+
+App -> UI : 触发重绘
+
+== 阶段二: UI 渲染工具调用卡片 ==
+
+UI -> UI : 检测消息中的 tool_calls 字段
+UI -> PendingTools : 查询 call_id 状态
+
+alt 状态 == Pending
+    UI -> User : 渲染 "○ tool_name(args)"\n黄色警告色
+    UI -> User : 显示确认对话框\n"是否执行工具调用?"
+end
+
+== 阶段三: 用户确认 ==
+
+User -> UI : 回车确认 (ConfirmToolCall)
+UI -> App : Action::ConfirmToolCall(confirmation)
+
+App -> PendingTools : update(call_id, Running)
+App -> UI : 触发重绘
+
+UI -> User : 渲染 "… tool_name(args)"\n运行中指示
+
+== 阶段四: 工具执行 ==
+
+App -> Sandbox : 启动工具执行
+
+activate Sandbox
+
+Sandbox -> Sandbox : 解析 arguments JSON
+Sandbox -> Sandbox : 构建命令行
+
+note right of Sandbox
+  <b>安全机制:</b>
+  - 参数白名单校验
+  - 命令注入防护
+  - 超时控制 (30s)
+  - 输出大小限制 (1MB)
+end note
+
+Sandbox -> ExtTool : 执行外部命令
+activate ExtTool
+
+alt 执行成功
+    ExtTool --> Sandbox : stdout + stderr
+    Sandbox -> App : Action::ToolCallResponse {\n  tab_id, call_id,\n  result: "扫描结果..."\n}
+    App -> PendingTools : update(call_id, Success { result })
+    App -> App : 创建 Tool 角色消息\n(role=Tool, tool_call_id=call_id)
+    App -> App : 追加到 tab.messages
+    UI -> User : 渲染 "✓ tool_name" 绿色成功
+
+else 执行失败
+    ExtTool --> Sandbox : 错误信息
+    Sandbox -> App : Action::ToolCallResponse {\n  result: "错误: ..."\n} (仍以ToolCallResponse传递)
+    App -> PendingTools : update(call_id, Failed { error })
+    UI -> User : 渲染 "✗ tool_name" 红色失败
+end
+
+deactivate ExtTool
+deactivate Sandbox
+
+== 阶段五: 结果反馈回 LLM ==
+
+App -> App : 将 Tool 角色消息加入对话历史
+App -> App : 发起新一轮 stream_chat()\n(消息历史包含工具结果)
+
+note over App
+  LLM 收到工具结果后:
+  1. 分析输出内容
+  2. 生成自然语言总结
+  3. 可能发起更多工具调用
+  4. 最终形成完整回复
+end note
+
+== 阶段六: 用户展开查看详情 ==
+
+User -> UI : 点击工具调用卡片
+UI -> User : 展开显示完整参数和结果
+
+note left of User
+  可交互功能:
+  - 点击展开/折叠详情
+  - 复制工具输出
+  - 重新执行工具调用
+  - 修改参数后重新执行
+end note
+
+center footer 哪吒网络安全 TUI · Function Calling · 6 阶段完整生命周期
+@enduml

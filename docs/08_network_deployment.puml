@@ -1,0 +1,152 @@
+@startuml 哪吒网络安全-网络部署架构
+' =============================================================================
+' 哪吒网络安全 TUI —— 网络部署架构图
+' 描述: 从操作员工作站到 DeepSeek API 的网络拓扑、安全边界与协议栈
+' =============================================================================
+
+title 哪吒网络安全 —— 网络部署架构图
+
+skinparam backgroundColor #121218
+skinparam defaultFontColor #DCDCE6
+skinparam arrowColor #00D4FF
+skinparam nodeBackgroundColor #1E1E2E
+skinparam nodeBorderColor #32324B
+skinparam agentBackgroundColor #1E1E2E
+skinparam agentBorderColor #32324B
+skinparam noteBackgroundColor #1A1A2E
+skinparam noteBorderColor #00D4FF
+skinparam cloudBackgroundColor #1A1A2E
+skinparam cloudBorderColor #00D4FF
+
+' =============================================================================
+' 安全区域: 操作员工作站
+' =============================================================================
+rectangle "操作员工作站\n(红队操作环境)" as OperatorWorkstation {
+    node "终端模拟器\n(iTerm2 / Alacritty / Windows Terminal)" as TerminalEmu
+    node "哪吒网络安全 TUI\n单一二进制文件" as NezhaBinary
+    node ".env 文件\nDEEPSEEK_TOKEN" as EnvFile
+    node "agents.yaml\n智能体配置" as AgentYAML
+    node "工具集\nNmap / MSF / Burp" as LocalTools
+}
+
+' =============================================================================
+' 安全区域: 本地网络
+' =============================================================================
+rectangle "本地网络\n(企业内网 / VPN)" as LocalNetwork {
+    node "防火墙\n(出站规则)" as Firewall
+    node "DNS 解析器" as DNS
+    node "SOCKS/HTTP 代理\n(可选)" as Proxy
+}
+
+' =============================================================================
+' 互联网边界
+' =============================================================================
+cloud "互联网\n(HTTPS/TLS 1.3)" as Internet
+
+' =============================================================================
+' 安全区域: DeepSeek 云服务
+' =============================================================================
+rectangle "DeepSeek 云服务\n(api.deepseek.com)" as DeepSeekCloud {
+    node "API 网关\n(认证 + 限流)" as APIGateway
+    node "负载均衡器" as LoadBalancer
+    node "推理集群\n(DeepSeek V3/R1)" as InferenceCluster
+    
+    database "模型权重存储" as ModelStore
+    database "会话缓存\n(服务端可选)" as SessionCache
+}
+
+' =============================================================================
+' 安全区域: 目标环境
+' =============================================================================
+rectangle "目标环境\n(渗透测试目标)" as TargetEnv {
+    node "目标服务器" as TargetServer
+    node "Web 应用" as TargetWeb
+}
+
+' =============================================================================
+' 连接关系
+' =============================================================================
+TerminalEmu -down-> NezhaBinary : 键盘输入/stdout
+EnvFile -right-> NezhaBinary : dotenvy 加载
+AgentYAML -right-> NezhaBinary : serde_yaml 解析
+
+NezhaBinary -left-> LocalTools : 工具调用执行\n(stdout/stderr)
+NezhaBinary -down-> Firewall : TCP 443
+Firewall -down-> DNS : 域名解析
+DNS -down-> Internet
+Internet -down-> APIGateway : HTTPS
+
+APIGateway -down-> LoadBalancer
+LoadBalancer -down-> InferenceCluster
+
+NezhaBinary -down-> Proxy : 可选代理
+
+' =============================================================================
+' 协议栈标注
+' =============================================================================
+note right of Internet
+  <b>网络协议栈 (自顶向下):</b>
+  
+  | 协议层 | 说明 |
+  | HTTP/2 | 多路复用，长连接 |
+  | TLS 1.3 | 加密传输 |
+  | TCP | 可靠传输 |
+  | IP | 网络路由 |
+  
+  <b>认证机制:</b>
+  Authorization: Bearer sk-xxx
+  
+  <b>数据格式:</b>
+  - 请求: JSON (Content-Type: application/json)
+  - 响应: SSE (text/event-stream)
+  
+  <b>安全性:</b>
+  - Token 本地存储 (.env, 不入 VCS)
+  - 全程 TLS 加密
+  - 支持 HTTP 代理
+  - 不记录完整 API 日志
+end note
+
+' =============================================================================
+' 渗透测试流量
+' =============================================================================
+NezhaBinary -right-> TargetServer : 渗透测试流量\n(通过 LocalTools)
+NezhaBinary -right-> TargetWeb : Web 扫描流量
+
+note bottom of TargetEnv
+  <b>红队操作流量:</b>
+  - Nmap: SYN/ACK 扫描
+  - Metasploit: payload 投递
+  - Burp: HTTP 代理拦截
+  - 自定义脚本: 漏洞利用
+  
+  注意: 工具调用由 LLM 建议，
+  实际执行由操作员确认后在本机运行。
+  LLM 仅提供指令建议，不直接操作目标。
+end note
+
+' =============================================================================
+' 安全边界标注
+' =============================================================================
+legend bottom
+  <b>安全边界说明:</b>
+  
+  |= 边界 |= 说明 |
+  | 操作员工作站 | API Token 唯一存储位置，不传输到第三方 |
+  | 企业防火墙 | 仅开放出站 TCP 443 到 DeepSeek API |
+  | TLS 隧道 | 所有 API 通信端到端加密 |
+  | DeepSeek 云 | 不持久化用户对话数据 (无状态 API) |
+  
+  <b>数据流方向:</b>
+  → 出站: 对话历史 → DeepSeek API (JSON)
+  ← 入站: AI 响应 ← DeepSeek API (SSE)
+  → 出站: 工具执行 → 目标环境 (工具协议)
+  
+  <b>敏感数据处理:</b>
+  - API Token: .env 文件，.gitignore 排除
+  - 对话历史: 仅存在于客户端内存
+  - 工具输出: 本地 stdout 捕获
+end legend
+
+center footer 哪吒网络安全 TUI · 网络部署架构 · 安全通信
+@enduml

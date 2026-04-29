@@ -1,0 +1,112 @@
+@startuml 哪吒网络安全-事件循环主流程
+' =============================================================================
+' 哪吒网络安全 TUI —— 事件循环主流程图
+' 描述: 程序启动后进入的主循环逻辑，包含事件轮询、状态更新和界面渲染
+' =============================================================================
+
+title 哪吒网络安全 —— 事件循环主流程图
+
+skinparam backgroundColor #121218
+skinparam defaultFontColor #DCDCE6
+skinparam arrowColor #00D4FF
+skinparam activityBackgroundColor #1E1E2E
+skinparam activityBorderColor #32324B
+skinparam activityFontColor #DCDCE6
+skinparam diamondBackgroundColor #1A1A2E
+skinparam diamondBorderColor #00D4FF
+skinparam diamondFontColor #00D4FF
+skinparam startColor #00FF78
+skinparam endColor #FF5050
+skinparam noteBackgroundColor #1A1A2E
+skinparam noteBorderColor #00D4FF
+
+start
+
+:初始化终端 (raw mode + alternate screen);
+:加载 Agent 配置 (agents.yaml);
+:加载 App 配置 (config.yaml + .env);
+:创建 App 全局状态;
+:创建 mpsc 通道 (tx, rx);
+
+note right
+  last_tick = Instant::now()
+  tick_duration = 100ms
+end note
+
+:terminal.draw() 渲染初始界面;
+
+repeat
+    :计算超时间隔\n(timeout = 100ms - 已流逝时间);
+
+    if (event::poll(timeout)?) then (有事件)
+        :event::read() 读取事件;
+
+        switch (事件类型)
+        case (键盘事件 KeyEvent)
+            :process_key() 处理按键;
+            if (是命令快捷键?) then (是)
+                :生成 Action (Shutdown/NewTab/...);
+                :app::update(&mut app, action);
+            else (文本输入)
+                :追加字符到 input_buffer;
+            endif
+
+        case (窗口尺寸变更 Resize)
+            :生成 Action::Resize(w, h);
+            :app::update() 更新布局;
+
+        case (鼠标事件 MouseEvent)
+            :预留处理 (当前忽略);
+
+        endswitch
+
+    else (超时，无事件)
+    endif
+
+    if (last_tick.elapsed() >= 100ms) then (Tick 到来)
+        :生成 Action::Tick;
+        :app::update(&mut app, Action::Tick);
+        :last_tick = Instant::now();
+    endif
+
+    :terminal.draw() 重绘界面;
+
+    if (mpsc 通道有待处理 Action?) then (有)
+        :从 rx 接收 Action;
+        :app::update(&mut app, action);
+        :terminal.draw() 重新渲染;
+    endif
+
+repeat while (app.should_quit == false?) is (false)
+-> (true);
+
+:cleanup_terminal();
+:恢复 raw mode;
+:恢复鼠标捕获;
+:恢复原始屏幕缓冲区;
+
+stop
+
+note right
+  <b>关键设计决策:</b>
+  
+  1. poll() 超时设为 (100ms - 已流逝时间)
+     确保 Tick 精确到 ~100ms 间隔
+  
+  2. 事件处理在同一个线程中串行执行
+     避免竞态条件，无需 Mutex
+  
+  3. mpsc 通道在 poll 超时后检查
+     确保 API 响应不会阻塞 UI
+  
+  4. draw() 在事件处理前后各调用一次
+     保证界面始终反映最新状态
+
+  <b>性能指标:</b>
+  - 空闲时: 10 FPS (仅 Tick 重绘)
+  - 流式接收时: 每 chunk 重绘一次
+  - 按键时: 即时重绘
+end note
+
+center footer 哪吒网络安全 TUI · 事件循环 · Elm Architecture 实现
+@enduml

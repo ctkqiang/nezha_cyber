@@ -1,0 +1,122 @@
+@startuml 哪吒网络安全-TUI界面布局
+' =============================================================================
+' 哪吒网络安全 TUI —— 终端界面布局结构图
+' 描述: 终端屏幕的完整分区布局、组件树与键鼠交互热点
+' =============================================================================
+
+title 哪吒网络安全 —— TUI 终端界面布局结构图
+
+skinparam backgroundColor #121218
+skinparam defaultFontColor #DCDCE6
+skinparam arrowColor #00D4FF
+skinparam rectangleBackgroundColor #1E1E2E
+skinparam rectangleBorderColor #32324B
+skinparam noteBackgroundColor #1A1A2E
+skinparam noteBorderColor #00D4FF
+
+' =============================================================================
+' 主布局框架
+' =============================================================================
+rectangle "终端屏幕 (Terminal Area)\nratatui::layout::Rect" as Terminal {
+    
+    rectangle "水平分割 (Direction::Horizontal)" as Horizontal {
+        
+        rectangle "左侧边栏 (0-25%)\nsidebar: Option<Rect>\n可折叠 (Ctrl+B)" as Sidebar {
+            rectangle "区域A: 项目标题\nrender_sidebar_header()" as SidebarHeader
+            rectangle "区域B: Token 用量\nrender_sidebar_usage()\nprompt_tokens / completion_tokens\n费用: ¥0.0034" as SidebarUsage
+            rectangle "区域C: Agent 列表\nrender_sidebar_agents()\n▶ 红队渗透助手\n   代码审计专家\n   威胁情报分析师" as SidebarAgents
+        }
+        
+        rectangle "右侧主区域 (75-100%)\nmain_area: Rect" as MainArea {
+            
+            rectangle "垂直分割 (Direction::Vertical)" as Vertical {
+                
+                rectangle "区域D: Tab 栏 (2行)\nrender_tab_bar()\n[ 会话 1 ] [ 会话 2 ] [ + ]" as TabBar
+                
+                rectangle "区域E: 消息列表 (Min 3行)\nrender_messages()\n支持滚动\nauto_scroll / 手动滚动" as MessageList {
+                    rectangle "[你] 请帮我分析这个漏洞" as UserMsg
+                    rectangle "[哪吒] 好的，这是一个典型的 XSS 漏洞...\n  漏洞位于以下位置..." as AssistantMsg
+                    rectangle "[工具] ○ run_nmap(target=\"192.168.1.1\")" as ToolMsg
+                }
+                
+                rectangle "区域F: 输入区 (3行)\nrender_input_area()\n焦点: ChatInput\n多行支持 (Ctrl+J)" as InputArea
+                
+                rectangle "区域G: 状态栏 (1行)\nrender_status_bar()\n[ 完成 - Token: 150P + 380C | 费用: ¥0.0034 ]     [ 模型: deepseek-chat | 主题: default | Tab 1/3 ]" as StatusBar
+            }
+        }
+    }
+    
+    rectangle "命令面板浮层 (居中)\ncommand_palette: Option<Rect>\nCtrl+K 切换\n60x12 固定尺寸" as CommandPalette
+}
+
+' =============================================================================
+' 布局约束说明
+' =============================================================================
+note right of Terminal
+  <b>布局计算 (ui/layout.rs::calculate()):</b>
+  
+  Horizontal:
+  - Constraint::Length(sidebar_width) 当侧边栏可见
+  - 或 Constraint::Min(40) 仅有主区域
+  
+  Vertical (主区域内):
+  - Constraint::Length(2)   Tab 栏
+  - Constraint::Min(3)     消息列表 (弹性)
+  - Constraint::Length(3)   输入区
+  - Constraint::Length(1)   状态栏
+  
+  命令面板:
+  - 宽度: min(main_area.width, 60)
+  - 高度: min(main_area.height, 12)
+  - 位置: 水平居中, 垂直 1/3 处
+end note
+
+' =============================================================================
+' 键盘焦点切换
+' =============================================================================
+note bottom of Sidebar
+  <b>键盘焦点 (Focus 枚举):</b>
+  
+  Tab 键循环切换:
+  ChatInput → Sidebar → MessageList → ChatInput
+  
+  各焦点区域行为:
+  - ChatInput: 接收文本输入
+  - Sidebar: 上下键切换 Agent/会话
+  - MessageList: 上下键滚动消息
+  - CommandPalette: 输入搜索命令
+end note
+
+' =============================================================================
+' 鼠标交互热点
+' =============================================================================
+note bottom of MessageList
+  <b>鼠标交互区域:</b>
+  
+  - 侧边栏 Agent 列表: 点击切换 Agent
+  - Tab 栏: 点击切换标签页
+  - 消息列表: 滚轮上下滚动
+  - 工具调用卡片: 点击展开/折叠详情
+  - 输入区: 点击定位光标
+  - 命令面板: 点击选择命令
+end note
+
+' =============================================================================
+' 颜色参考
+' =============================================================================
+legend bottom
+  <b>主题配色参考 (cyber-dark):</b>
+  
+  |= 组件 |= 背景色 |= 前景色 |= 强调色 |
+  | 全局 | RGB(18,18,24) | RGB(220,220,230) | RGB(0,212,255) |
+  | 侧边栏 | RGB(14,14,20) | RGB(180,180,200) | - |
+  | 输入区 | RGB(22,22,30) | - | 聚焦时青色边框 |
+  | Tab 活跃 | RGB(30,30,42) | RGB(0,212,255) | - |
+  | 用户消息 | - | RGB(100,200,255) | - |
+  | 助手消息 | - | RGB(200,220,240) | - |
+  | 工具消息 | - | RGB(255,200,60) | - |
+  | 状态栏 | RGB(18,18,28) | RGB(0,150,180) | - |
+end legend
+
+center footer 哪吒网络安全 TUI · 界面布局结构 · 7 区域 + 1 浮层
+@enduml

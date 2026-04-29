@@ -1,0 +1,134 @@
+@startuml 哪吒网络安全-程序启动序列
+' =============================================================================
+' 哪吒网络安全 TUI —— 程序启动序列图
+' 描述: 从用户执行命令到进入事件循环主循环的完整启动流程
+' =============================================================================
+
+title 哪吒网络安全 —— 程序启动序列图
+
+skinparam backgroundColor #121218
+skinparam defaultFontColor #DCDCE6
+skinparam sequenceArrowColor #00D4FF
+skinparam participantBackgroundColor #1E1E2E
+skinparam participantBorderColor #32324B
+skinparam noteBackgroundColor #1A1A2E
+skinparam noteBorderColor #00D4FF
+skinparam lifeLineColor #32324B
+
+actor "用户" as User
+participant "main()\n入口函数" as Main
+participant "env\n环境变量" as EnvLoader
+participant "文件系统\nYAML 解析" as FS
+participant "终端\ncrossterm" as Terminal
+participant "tokio\n异步运行时" as Tokio
+participant "App\n全局状态" as App
+
+== 阶段一: 环境初始化 ==
+
+User -> Main : 执行 ./nezha_cyber
+activate Main
+
+Main -> Main : dotenvy::dotenv()
+Main -> EnvLoader : 读取 .env 文件
+activate EnvLoader
+EnvLoader --> Main : DEEPSEEK_TOKEN / DEEPSEEK_API_KEY
+deactivate EnvLoader
+
+== 阶段二: 配置加载 ==
+
+Main -> FS : load_agents()
+activate FS
+FS -> FS : 检查 agents.yaml 是否存在？
+alt agents.yaml 存在且格式正确
+    FS -> FS : serde_yaml::from_str()
+    FS --> Main : Vec<AgentConfig> (自定义配置)
+else agents.yaml 不存在或解析失败
+    FS --> Main : default_agents() (3 个内置智能体)
+end
+deactivate FS
+
+Main -> FS : load_app_config()
+activate FS
+FS -> FS : 检查 config.yaml 是否存在？
+alt config.yaml 存在
+    FS --> Main : AppConfig (YAML 配置)
+else 无 config.yaml
+    FS --> Main : AppConfig::default()
+end
+deactivate FS
+
+note right of Main
+  AppConfig 包含:
+  - api_base (默认 api.deepseek.com)
+  - api_key (从环境变量)
+  - default_model (deepseek-chat)
+  - default_pricing (2.0/8.0)
+end note
+
+== 阶段三: 终端接管 ==
+
+Main -> Terminal : enable_raw_mode()
+activate Terminal
+Terminal --> Main : raw mode 已启用
+Main -> Terminal : EnterAlternateScreen
+Main -> Terminal : EnableMouseCapture
+Main -> Terminal : 清屏
+deactivate Terminal
+
+note right of Main
+  终端进入全屏模式:
+  - 原始输入 (无行缓冲)
+  - 交替屏幕 (独立缓冲区)
+  - 鼠标事件捕获
+end note
+
+== 阶段四: 运行时与状态初始化 ==
+
+Main -> Tokio : Runtime::new()
+activate Tokio
+
+Main -> Tokio : mpsc::unbounded_channel<Action>()
+Tokio --> Main : (tx, rx) 通道对
+
+Main -> App : App::new(agents, app_config)
+activate App
+App -> App : 创建 DeepSeekClient\n(api_base, api_key, model)
+App -> App : 创建默认标签页 Tab(0,"会话 1")
+App -> App : 设置默认主题 "cyber-dark"
+App --> Main : App 初始状态
+deactivate App
+
+== 阶段五: 进入事件循环 ==
+
+Main -> Tokio : rt.block_on(async { loop })
+
+note over Main, Tokio
+  ====== 事件循环已启动 ======
+  1. terminal.draw() 渲染 UI
+  2. event::poll() 等待输入
+  3. update() 处理状态变更
+  4. 回到步骤 1
+
+  退出条件: app.should_quit == true
+end note
+
+Main -> Tokio : 事件循环运行中...
+deactivate Main
+
+== 阶段六: 正常退出 ==
+
+User -> Main : 按 Ctrl+C
+activate Main
+Main -> Main : Action::Shutdown\n-> app.should_quit = true
+Main -> Terminal : cleanup_terminal()
+activate Terminal
+Terminal -> Terminal : disable_raw_mode()
+Terminal -> Terminal : DisableMouseCapture
+Terminal -> Terminal : LeaveAlternateScreen
+deactivate Terminal
+Main -> User : 终端恢复，程序退出
+deactivate Main
+deactivate Tokio
+
+center footer 哪吒网络安全 TUI · 启动序列 · 共计 6 个阶段
+@enduml
