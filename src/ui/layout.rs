@@ -7,7 +7,6 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 /// 整体布局分割结果
 pub struct AppLayout {
     pub sidebar: Option<Rect>,
-    #[allow(dead_code)]
     pub main_area: Rect,
     pub tab_bar: Rect,
     pub messages: Rect,

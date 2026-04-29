@@ -18,7 +18,6 @@ pub struct Theme {
     pub input_border: Color,
     pub user_msg_color: Color,
     pub assistant_msg_color: Color,
-    #[allow(dead_code)]
     pub error_color: Color,
     pub success_color: Color,
     pub warning_color: Color,

@@ -71,7 +71,7 @@ pub struct AppConfig {
 }
 
 fn default_api_base() -> String {
-    "https://api.deepseek.com/v1".into()
+    "https://api.deepseek.com".into()
 }
 
 impl Default for AppConfig {
@@ -79,7 +79,7 @@ impl Default for AppConfig {
         Self {
             api_base: default_api_base(),
             api_key: String::new(),
-            default_model: "deepseek-chat".into(),
+            default_model: "deepseek-v4-pro".into(),
             default_pricing: Some(DefaultPricing {
                 prompt_price_per_m: 2.0,
                 completion_price_per_m: 8.0,
@@ -90,7 +90,6 @@ impl Default for AppConfig {
 
 impl AgentConfig {
     /// 将 AgentConfig 中声明的工具转换为 API Tool 列表
-    #[allow(dead_code)]
     pub fn to_api_tools(&self) -> Vec<Tool> {
         self.tools
             .iter()
@@ -171,8 +170,8 @@ mod tests {
     #[test]
     fn app_config_default_values() {
         let config = AppConfig::default();
-        assert_eq!(config.api_base, "https://api.deepseek.com/v1");
-        assert_eq!(config.default_model, "deepseek-chat");
+        assert_eq!(config.api_base, "https://api.deepseek.com");
+        assert_eq!(config.default_model, "deepseek-v4-pro");
         assert!(config.api_key.is_empty());
         let pricing = config.default_pricing.unwrap();
         assert_eq!(pricing.prompt_price_per_m, 2.0);
@@ -181,7 +180,7 @@ mod tests {
 
     #[test]
     fn app_config_default_api_base_matches_fn() {
-        assert_eq!(default_api_base(), "https://api.deepseek.com/v1");
+        assert_eq!(default_api_base(), "https://api.deepseek.com");
     }
 
     #[test]

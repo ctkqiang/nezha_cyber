@@ -12,9 +12,7 @@ use crate::api::types::Usage;
 pub struct ToolCallConfirmation {
     pub tab_id: usize,
     pub call_id: String,
-    #[allow(dead_code)]
     pub name: String,
-    #[allow(dead_code)]
     pub args: serde_json::Value,
 }
 
@@ -22,10 +20,7 @@ pub struct ToolCallConfirmation {
 ///
 /// 通过 `tokio::sync::mpsc::unbounded_channel<Action>` 在主循环与异步任务间传递。
 /// 包含三类事件：用户输入（按键/命令）、流式 API 响应、系统事件（Tick/Resize）。
-///
-/// 注意：流式与工具调用变体在 API 链路接通前不会构造，届时 dead_code 警告自然消除。
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum Action {
     // ---- 用户输入 ----
     Key(KeyEvent),

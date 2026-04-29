@@ -6,12 +6,12 @@
 use crate::action::Action;
 use crate::agent::config::{AgentConfig, AppConfig, DefaultPricing};
 use crate::api::deepseek::{DeepSeekClient, DeepSeekConfig};
-use crate::api::types::{Message, Pricing, Role, ToolCall, Usage};
+use crate::api::types::{ApiMessage, Message, Pricing, Role, ToolCall, Usage};
 use std::collections::HashMap;
+use tokio::sync::mpsc::UnboundedSender;
 
 /// 焦点区域枚举，控制 Tab 键焦点切换
 #[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code)]
 pub enum Focus {
     ChatInput,
     Sidebar,
@@ -21,7 +21,6 @@ pub enum Focus {
 
 /// 工具调用状态，用于在 UI 中渲染卡片
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum ToolCallStatus {
     Pending,
     Running,
@@ -32,7 +31,6 @@ pub enum ToolCallStatus {
 /// 单个标签页的会话状态
 #[derive(Debug, Clone)]
 pub struct Tab {
-    #[allow(dead_code)]
     pub id: usize,
     pub title: String,
     pub messages: Vec<Message>,
@@ -40,9 +38,7 @@ pub struct Tab {
     pub agent_name: String,
     pub total_usage: Usage,
     pub input_buffer: String,
-    #[allow(dead_code)]
     pub scroll_offset: usize,
-    #[allow(dead_code)]
     pub auto_scroll: bool,
     pub pending_tool_calls: HashMap<String, ToolCallStatus>,
 }
@@ -131,6 +127,37 @@ impl App {
     /// 获取当前活跃的标签页可变引用
     pub fn active_tab_mut(&mut self) -> &mut Tab {
         &mut self.tabs[self.active_tab]
+    }
+
+    /// 发起流式对话请求 —— 构建消息列表并调用 DeepSeek API
+    ///
+    /// 将当前活跃标签页的对话历史（含系统提示）打包为 API 请求，
+    /// 通过 `stream_chat` 后台任务发送，结果通过 `tx` 通道异步回传。
+    pub fn send_stream_chat_request(&self, tx: UnboundedSender<Action>) {
+        let tab = self.active_tab();
+        let tab_id = self.active_tab;
+
+        let agent = self.agents.iter().find(|a| a.name == tab.agent_name);
+
+        let system_content = agent.map(|a| a.system_prompt.clone()).unwrap_or_default();
+
+        let system_msg = ApiMessage {
+            role: "system".to_string(),
+            content: system_content,
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+        };
+
+        let mut api_messages = vec![system_msg];
+        for msg in &tab.messages {
+            api_messages.push(ApiMessage::from(msg));
+        }
+
+        let tools = agent.map(|a| a.to_api_tools());
+
+        self.client
+            .stream_chat(tx, tab_id, api_messages, tools, Some(0.7));
     }
 }
 
