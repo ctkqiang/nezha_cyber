@@ -4,6 +4,7 @@
 //! - SSE 流式对话（逐 token 返回）
 //! - Function Calling（工具调用）
 //! - Token 用量统计与费用计算
+//! - 账户余额查询
 //! - 错误重试与流异常处理
 //!
 //! 所有 API 调用均在后台 tokio 任务中执行，通过 mpsc 通道将结果传回主循环。
@@ -15,30 +16,25 @@ use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
 use super::types::{
-    ApiMessage, ChatCompletionRequest, PendingToolCall, StreamChoice, StreamResponse,
-    StreamToolCallDelta, Tool, Usage,
+    ApiMessage, BalanceInfo, ChatCompletionRequest, PendingToolCall, StreamChoice,
+    StreamResponse, StreamToolCallDelta, Tool, Usage,
 };
 use crate::action::Action;
 
 /// DeepSeek 客户端配置
 #[derive(Debug, Clone)]
 pub struct DeepSeekConfig {
-    #[allow(dead_code)]
     pub api_base: String,
-    #[allow(dead_code)]
     pub api_key: String,
     pub model: String,
 }
 
 /// DeepSeek API 客户端
 ///
-/// 持有 HTTP 客户端实例与 API 配置，提供流式对话发送方法。
-///
-/// 注意：`stream_chat` 方法在 API 链路接通前不会被调用，届时相关 dead_code 警告自然消除。
+/// 持有 HTTP 客户端实例与 API 配置，提供流式对话与余额查询方法。
 #[derive(Debug, Clone)]
 pub struct DeepSeekClient {
     config: Arc<DeepSeekConfig>,
-    #[allow(dead_code)]
     client: Client,
 }
 
@@ -65,6 +61,43 @@ impl DeepSeekClient {
         Arc::make_mut(&mut self.config).model = model;
     }
 
+    /// 获取 API 密钥引用
+    pub fn api_key(&self) -> &str {
+        &self.config.api_key
+    }
+
+    /// 获取 API 基础 URL 引用
+    pub fn api_base(&self) -> &str {
+        &self.config.api_base
+    }
+
+    /// 查询账户余额
+    pub async fn check_balance(&self) -> Result<BalanceInfo, String> {
+        let url = format!("{}/user/balance", self.config.api_base);
+
+        let response = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.config.api_key))
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .map_err(|e| format!("余额查询请求失败: {}", e))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("余额查询 API 返回错误 {}: {}", status.as_u16(), body));
+        }
+
+        let balance: BalanceInfo = response
+            .json()
+            .await
+            .map_err(|e| format!("余额数据解析失败: {}", e))?;
+
+        Ok(balance)
+    }
+
     /// 发起流式对话请求（异步后台任务）
     ///
     /// # 参数
@@ -76,7 +109,6 @@ impl DeepSeekClient {
     ///
     /// # 副作用
     /// 通过 `tx` 依次发送 `StreamStart`、`StreamChunk`、`StreamDone` 或 `StreamError`。
-    #[allow(dead_code)]
     pub fn stream_chat(
         &self,
         tx: UnboundedSender<Action>,
@@ -197,7 +229,6 @@ impl DeepSeekClient {
 }
 
 /// 处理流式响应中的单个 choice，分发内容增量或工具调用增量
-#[allow(dead_code)]
 fn process_stream_choice(
     tx: &UnboundedSender<Action>,
     tab_id: usize,
@@ -223,7 +254,6 @@ fn process_stream_choice(
 }
 
 /// 将 tool_calls delta 片段累积到 pending_tool_calls 中
-#[allow(dead_code)]
 fn apply_tool_call_delta(
     tx: &UnboundedSender<Action>,
     tab_id: usize,
