@@ -631,7 +631,7 @@ brew install openssl
 本项目采用 MIT 许可证。
 
 ```
-Copyright (c) 2025 钟智强 (Zhong Zhiqiang)
+Copyright (c) 2026 钟智强
 
 在此授予任何获取本软件及相关文档文件副本的人士免费许可，
 允许其不受限制地使用、复制、修改、合并、发布、分发、再许可
