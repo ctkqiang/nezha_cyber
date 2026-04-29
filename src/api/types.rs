@@ -2,11 +2,6 @@
 //!
 //! 本模块定义了与 DeepSeek Chat Completions API 交互所需的全部数据模型，
 //! 包括消息、工具调用、流式 Delta、Usage 统计等。
-//!
-//! 注意：本模块中的类型由 `deepseek.rs` 内部使用，
-//! 在 API 调用链路尚未从 main 接通之前会产生 dead_code 警告，届时自然消除。
-
-#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -276,6 +271,23 @@ pub struct ChoiceMessage {
     pub content: String,
     #[serde(default)]
     pub tool_calls: Option<Vec<ToolCall>>,
+}
+
+/// 账户余额信息
+#[derive(Debug, Clone, Deserialize)]
+pub struct BalanceInfo {
+    pub is_available: bool,
+    #[serde(default)]
+    pub balance_infos: Vec<BalanceDetail>,
+}
+
+/// 余额明细
+#[derive(Debug, Clone, Deserialize)]
+pub struct BalanceDetail {
+    pub currency: String,
+    pub total_balance: String,
+    pub granted_balance: String,
+    pub topped_up_balance: String,
 }
 
 /// 累积的工具调用状态，用于在流式接收过程中拼接 tool_calls
