@@ -355,3 +355,447 @@ pub fn update(app: &mut App, action: Action) -> bool {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::action::ToolCallConfirmation;
+    use crate::agent::config::{AppConfig, DefaultPricing};
+
+    fn test_app_config() -> AppConfig {
+        AppConfig {
+            api_base: "https://api.deepseek.com/v1".into(),
+            api_key: "sk-test".into(),
+            default_model: "deepseek-chat".into(),
+            default_pricing: Some(DefaultPricing {
+                prompt_price_per_m: 2.0,
+                completion_price_per_m: 8.0,
+            }),
+        }
+    }
+
+    fn test_agents() -> Vec<AgentConfig> {
+        vec![AgentConfig {
+            name: "测试Agent".into(),
+            description: "测试用".into(),
+            system_prompt: "你是一个测试助手".into(),
+            model: "deepseek-chat".into(),
+            tools: vec![],
+        }]
+    }
+
+    fn make_app() -> App {
+        App::new(test_agents(), test_app_config())
+    }
+
+    #[test]
+    fn app_new_creates_one_tab() {
+        let app = make_app();
+        assert_eq!(app.tabs.len(), 1);
+        assert_eq!(app.active_tab, 0);
+    }
+
+    #[test]
+    fn app_new_sidebar_visible() {
+        let app = make_app();
+        assert!(app.sidebar_visible);
+    }
+
+    #[test]
+    fn app_new_command_palette_closed() {
+        let app = make_app();
+        assert!(!app.command_palette_open);
+    }
+
+    #[test]
+    fn app_new_focus_is_chat_input() {
+        let app = make_app();
+        assert_eq!(app.focus, Focus::ChatInput);
+    }
+
+    #[test]
+    fn app_new_should_not_quit() {
+        let app = make_app();
+        assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn update_shutdown_sets_should_quit() {
+        let mut app = make_app();
+        let result = update(&mut app, Action::Shutdown);
+        assert!(result);
+        assert!(app.should_quit);
+    }
+
+    #[test]
+    fn update_submit_message_appends_user_msg() {
+        let mut app = make_app();
+        let initial_count = app.active_tab().messages.len();
+        let result = update(&mut app, Action::SubmitMessage("你好世界".into()));
+        assert!(result);
+        assert_eq!(app.active_tab().messages.len(), initial_count + 1);
+        let last_msg = app.active_tab().messages.last().unwrap();
+        assert_eq!(last_msg.role, Role::User);
+        assert_eq!(last_msg.content, "你好世界");
+    }
+
+    #[test]
+    fn update_submit_message_clears_input_buffer() {
+        let mut app = make_app();
+        app.active_tab_mut().input_buffer = "old text".into();
+        update(&mut app, Action::SubmitMessage("新消息".into()));
+        assert!(app.active_tab().input_buffer.is_empty());
+    }
+
+    #[test]
+    fn update_submit_message_trims_whitespace() {
+        let mut app = make_app();
+        update(&mut app, Action::SubmitMessage("  你好  ".into()));
+        let last_msg = app.active_tab().messages.last().unwrap();
+        assert_eq!(last_msg.content, "你好");
+    }
+
+    #[test]
+    fn update_submit_empty_message_does_nothing() {
+        let mut app = make_app();
+        let initial_count = app.active_tab().messages.len();
+        let result = update(&mut app, Action::SubmitMessage("   ".into()));
+        assert!(!result);
+        assert_eq!(app.active_tab().messages.len(), initial_count);
+    }
+
+    #[test]
+    fn update_new_tab_adds_tab_and_switches() {
+        let mut app = make_app();
+        assert_eq!(app.tabs.len(), 1);
+        update(&mut app, Action::NewTab);
+        assert_eq!(app.tabs.len(), 2);
+        assert_eq!(app.active_tab, 1);
+        assert_eq!(app.focus, Focus::ChatInput);
+    }
+
+    #[test]
+    fn update_new_tab_increments_title() {
+        let mut app = make_app();
+        update(&mut app, Action::NewTab);
+        assert_eq!(app.tabs[1].title, "会话 2");
+        update(&mut app, Action::NewTab);
+        assert_eq!(app.tabs[2].title, "会话 3");
+    }
+
+    #[test]
+    fn update_close_tab_removes_tab() {
+        let mut app = make_app();
+        update(&mut app, Action::NewTab);
+        assert_eq!(app.tabs.len(), 2);
+        update(&mut app, Action::CloseTab(1));
+        assert_eq!(app.tabs.len(), 1);
+    }
+
+    #[test]
+    fn update_close_tab_adjusts_active_index() {
+        let mut app = make_app();
+        update(&mut app, Action::NewTab);
+        update(&mut app, Action::NewTab);
+        assert_eq!(app.active_tab, 2);
+        update(&mut app, Action::CloseTab(2));
+        assert_eq!(app.active_tab, 1);
+    }
+
+    #[test]
+    fn update_close_last_tab_is_ignored() {
+        let mut app = make_app();
+        update(&mut app, Action::CloseTab(0));
+        assert_eq!(app.tabs.len(), 1);
+    }
+
+    #[test]
+    fn update_switch_tab_to_valid_index() {
+        let mut app = make_app();
+        update(&mut app, Action::NewTab);
+        update(&mut app, Action::NewTab);
+        update(&mut app, Action::SwitchTab(1));
+        assert_eq!(app.active_tab, 1);
+    }
+
+    #[test]
+    fn update_switch_tab_to_invalid_index_is_ignored() {
+        let mut app = make_app();
+        update(&mut app, Action::SwitchTab(99));
+        assert_eq!(app.active_tab, 0);
+    }
+
+    #[test]
+    fn update_toggle_sidebar_flips_visibility() {
+        let mut app = make_app();
+        assert!(app.sidebar_visible);
+        update(&mut app, Action::ToggleSidebar);
+        assert!(!app.sidebar_visible);
+        update(&mut app, Action::ToggleSidebar);
+        assert!(app.sidebar_visible);
+    }
+
+    #[test]
+    fn update_open_command_palette_toggles() {
+        let mut app = make_app();
+        assert!(!app.command_palette_open);
+        update(&mut app, Action::OpenCommandPalette);
+        assert!(app.command_palette_open);
+        assert_eq!(app.focus, Focus::CommandPalette);
+        update(&mut app, Action::OpenCommandPalette);
+        assert!(!app.command_palette_open);
+        assert_eq!(app.focus, Focus::ChatInput);
+    }
+
+    #[test]
+    fn update_change_theme_updates_theme_field() {
+        let mut app = make_app();
+        assert_eq!(app.theme, "default");
+        update(&mut app, Action::ChangeTheme("daylight".into()));
+        assert_eq!(app.theme, "daylight");
+    }
+
+    #[test]
+    fn update_change_model_updates_tab_and_client() {
+        let mut app = make_app();
+        let _old_model = app.active_tab().model.clone();
+        update(
+            &mut app,
+            Action::ChangeModel {
+                tab_id: 0,
+                model: "deepseek-reasoner".into(),
+            },
+        );
+        assert_eq!(app.tabs[0].model, "deepseek-reasoner");
+        assert_eq!(app.client.model(), "deepseek-reasoner");
+    }
+
+    #[test]
+    fn update_stream_start_appends_empty_assistant_msg() {
+        let mut app = make_app();
+        let msg_id = uuid::Uuid::new_v4();
+        let initial_count = app.active_tab().messages.len();
+        update(
+            &mut app,
+            Action::StreamStart {
+                tab_id: 0,
+                message_id: msg_id,
+            },
+        );
+        assert_eq!(app.active_tab().messages.len(), initial_count + 1);
+        let last = app.active_tab().messages.last().unwrap();
+        assert_eq!(last.id, msg_id);
+        assert_eq!(last.role, Role::Assistant);
+        assert_eq!(last.content, "");
+    }
+
+    #[test]
+    fn update_stream_chunk_appends_content() {
+        let mut app = make_app();
+        let msg_id = uuid::Uuid::new_v4();
+        update(
+            &mut app,
+            Action::StreamStart {
+                tab_id: 0,
+                message_id: msg_id,
+            },
+        );
+        update(
+            &mut app,
+            Action::StreamChunk {
+                tab_id: 0,
+                message_id: msg_id,
+                chunk: "你好".into(),
+            },
+        );
+        update(
+            &mut app,
+            Action::StreamChunk {
+                tab_id: 0,
+                message_id: msg_id,
+                chunk: "世界".into(),
+            },
+        );
+        let msg = app.tabs[0]
+            .messages
+            .iter()
+            .find(|m| m.id == msg_id)
+            .unwrap();
+        assert_eq!(msg.content, "你好世界");
+    }
+
+    #[test]
+    fn update_stream_done_accumulates_usage() {
+        let mut app = make_app();
+        let msg_id = uuid::Uuid::new_v4();
+        update(
+            &mut app,
+            Action::StreamStart {
+                tab_id: 0,
+                message_id: msg_id,
+            },
+        );
+        let usage = Usage {
+            prompt_tokens: 100,
+            completion_tokens: 50,
+            total_tokens: 150,
+        };
+        update(
+            &mut app,
+            Action::StreamDone {
+                tab_id: 0,
+                message_id: msg_id,
+                content: "完成".into(),
+                usage: usage.clone(),
+            },
+        );
+        assert_eq!(app.tabs[0].total_usage.prompt_tokens, 100);
+        assert_eq!(app.tabs[0].total_usage.completion_tokens, 50);
+    }
+
+    #[test]
+    fn update_stream_done_empty_content_gets_placeholder() {
+        let mut app = make_app();
+        let msg_id = uuid::Uuid::new_v4();
+        update(
+            &mut app,
+            Action::StreamStart {
+                tab_id: 0,
+                message_id: msg_id,
+            },
+        );
+        update(
+            &mut app,
+            Action::StreamDone {
+                tab_id: 0,
+                message_id: msg_id,
+                content: "".into(),
+                usage: Usage::default(),
+            },
+        );
+        let msg = app.tabs[0]
+            .messages
+            .iter()
+            .find(|m| m.id == msg_id)
+            .unwrap();
+        assert_eq!(msg.content, "(空响应)");
+    }
+
+    #[test]
+    fn update_stream_error_sets_error_content() {
+        let mut app = make_app();
+        let msg_id = uuid::Uuid::new_v4();
+        update(
+            &mut app,
+            Action::StreamStart {
+                tab_id: 0,
+                message_id: msg_id,
+            },
+        );
+        update(
+            &mut app,
+            Action::StreamError {
+                tab_id: 0,
+                message_id: msg_id,
+                error: "连接超时".into(),
+            },
+        );
+        let msg = app.tabs[0]
+            .messages
+            .iter()
+            .find(|m| m.id == msg_id)
+            .unwrap();
+        assert!(msg.content.contains("连接超时"));
+    }
+
+    #[test]
+    fn update_tool_call_request_adds_pending_status() {
+        let mut app = make_app();
+        let msg_id = uuid::Uuid::new_v4();
+        update(
+            &mut app,
+            Action::StreamStart {
+                tab_id: 0,
+                message_id: msg_id,
+            },
+        );
+        update(
+            &mut app,
+            Action::ToolCallRequest {
+                tab_id: 0,
+                call_id: "call_001".into(),
+                name: "run_nmap".into(),
+                args: serde_json::json!({"target": "192.168.1.1"}),
+            },
+        );
+        assert!(app.tabs[0].pending_tool_calls.contains_key("call_001"));
+    }
+
+    #[test]
+    fn update_tool_call_response_adds_tool_message() {
+        let mut app = make_app();
+        let msg_id = uuid::Uuid::new_v4();
+        update(
+            &mut app,
+            Action::StreamStart {
+                tab_id: 0,
+                message_id: msg_id,
+            },
+        );
+        let initial_count = app.tabs[0].messages.len();
+        update(
+            &mut app,
+            Action::ToolCallResponse {
+                tab_id: 0,
+                call_id: "call_002".into(),
+                result: "扫描完成: 22端口开放".into(),
+            },
+        );
+        assert_eq!(app.tabs[0].messages.len(), initial_count + 1);
+        let last = app.tabs[0].messages.last().unwrap();
+        assert_eq!(last.role, Role::Tool);
+        assert_eq!(last.tool_call_id, Some("call_002".into()));
+    }
+
+    #[test]
+    fn update_confirm_tool_call_sets_running() {
+        let mut app = make_app();
+        let confirmation = ToolCallConfirmation {
+            tab_id: 0,
+            call_id: "call_003".into(),
+            name: "test_tool".into(),
+            args: serde_json::json!({}),
+        };
+        app.tabs[0]
+            .pending_tool_calls
+            .insert("call_003".into(), ToolCallStatus::Pending);
+        update(&mut app, Action::ConfirmToolCall(confirmation));
+        let status = app.tabs[0].pending_tool_calls.get("call_003").unwrap();
+        assert!(matches!(status, ToolCallStatus::Running));
+    }
+
+    #[test]
+    fn update_tick_returns_false() {
+        let mut app = make_app();
+        assert!(!update(&mut app, Action::Tick));
+    }
+
+    #[test]
+    fn update_resize_returns_true() {
+        let mut app = make_app();
+        assert!(update(&mut app, Action::Resize(80, 24)));
+    }
+
+    #[test]
+    fn active_tab_returns_correct_tab() {
+        let app = make_app();
+        assert_eq!(app.active_tab().id, 0);
+    }
+
+    #[test]
+    fn active_tab_mut_allows_modification() {
+        let mut app = make_app();
+        app.active_tab_mut().input_buffer.push('a');
+        assert_eq!(app.active_tab().input_buffer, "a");
+    }
+}

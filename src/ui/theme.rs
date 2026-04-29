@@ -78,3 +78,63 @@ pub fn get_theme(name: &str) -> Theme {
     theme.name = name.to_string();
     theme
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_theme_cyber_dark_default() {
+        let theme = get_theme("default");
+        assert_eq!(theme.bg, Color::Rgb(18, 18, 24));
+        assert_eq!(theme.accent, Color::Rgb(0, 212, 255));
+    }
+
+    #[test]
+    fn get_theme_daylight_by_name() {
+        let theme = get_theme("daylight");
+        assert_eq!(theme.bg, Color::Rgb(245, 245, 250));
+        assert_eq!(theme.fg, Color::Rgb(30, 30, 40));
+    }
+
+    #[test]
+    fn get_theme_light_alias_returns_daylight() {
+        let theme = get_theme("light");
+        assert_eq!(theme.bg, Color::Rgb(245, 245, 250));
+    }
+
+    #[test]
+    fn get_theme_unknown_falls_back_to_cyber_dark() {
+        let theme = get_theme("nonexistent");
+        assert_eq!(theme.bg, Color::Rgb(18, 18, 24));
+    }
+
+    #[test]
+    fn get_theme_preserves_name_in_return() {
+        let theme = get_theme("custom-theme");
+        assert_eq!(theme.name, "custom-theme");
+    }
+
+    #[test]
+    fn get_theme_cyber_dark_has_expected_colors() {
+        let theme = get_theme("default");
+        assert_eq!(theme.sidebar_bg, Color::Rgb(14, 14, 20));
+        assert_eq!(theme.user_msg_color, Color::Rgb(100, 200, 255));
+        assert_eq!(theme.assistant_msg_color, Color::Rgb(200, 220, 240));
+        assert_eq!(theme.success_color, Color::Rgb(80, 255, 120));
+        assert_eq!(theme.warning_color, Color::Rgb(255, 200, 60));
+    }
+
+    #[test]
+    fn two_themes_have_different_accent_colors() {
+        let dark = get_theme("default");
+        let light = get_theme("daylight");
+        assert_ne!(dark.accent, light.accent);
+    }
+
+    #[test]
+    fn get_theme_empty_string_returns_cyber_dark() {
+        let theme = get_theme("");
+        assert_eq!(theme.bg, Color::Rgb(18, 18, 24));
+    }
+}

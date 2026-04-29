@@ -105,3 +105,117 @@ impl AgentConfig {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_tool_config(name: &str) -> AgentToolConfig {
+        AgentToolConfig {
+            name: name.into(),
+            description: format!("{} 的描述", name),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": { "target": { "type": "string" } }
+            }),
+        }
+    }
+
+    #[test]
+    fn agent_config_to_api_tools_empty() {
+        let agent = AgentConfig {
+            name: "测试Agent".into(),
+            description: "测试".into(),
+            system_prompt: "你是一个测试助手".into(),
+            model: "deepseek-chat".into(),
+            tools: vec![],
+        };
+        let api_tools = agent.to_api_tools();
+        assert!(api_tools.is_empty());
+    }
+
+    #[test]
+    fn agent_config_to_api_tools_single() {
+        let agent = AgentConfig {
+            name: "测试Agent".into(),
+            description: "测试".into(),
+            system_prompt: "你是一个测试助手".into(),
+            model: "deepseek-chat".into(),
+            tools: vec![make_tool_config("run_nmap")],
+        };
+        let api_tools = agent.to_api_tools();
+        assert_eq!(api_tools.len(), 1);
+        assert_eq!(api_tools[0].tool_type, "function");
+        assert_eq!(api_tools[0].function.name, "run_nmap");
+    }
+
+    #[test]
+    fn agent_config_to_api_tools_multiple() {
+        let agent = AgentConfig {
+            name: "测试Agent".into(),
+            description: "测试".into(),
+            system_prompt: "你是一个测试助手".into(),
+            model: "deepseek-chat".into(),
+            tools: vec![
+                make_tool_config("tool_a"),
+                make_tool_config("tool_b"),
+                make_tool_config("tool_c"),
+            ],
+        };
+        let api_tools = agent.to_api_tools();
+        assert_eq!(api_tools.len(), 3);
+        assert_eq!(api_tools[0].function.name, "tool_a");
+        assert_eq!(api_tools[2].function.name, "tool_c");
+    }
+
+    #[test]
+    fn app_config_default_values() {
+        let config = AppConfig::default();
+        assert_eq!(config.api_base, "https://api.deepseek.com/v1");
+        assert_eq!(config.default_model, "deepseek-chat");
+        assert!(config.api_key.is_empty());
+        let pricing = config.default_pricing.unwrap();
+        assert_eq!(pricing.prompt_price_per_m, 2.0);
+        assert_eq!(pricing.completion_price_per_m, 8.0);
+    }
+
+    #[test]
+    fn app_config_default_api_base_matches_fn() {
+        assert_eq!(default_api_base(), "https://api.deepseek.com/v1");
+    }
+
+    #[test]
+    fn yaml_deserialize_agents_config() {
+        let yaml = r#"
+agents:
+  - name: "测试Agent"
+    description: "一个测试智能体"
+    system_prompt: "你是一个测试助手"
+    model: "deepseek-chat"
+    tools:
+      - name: "test_tool"
+        description: "测试工具"
+        parameters:
+          type: "object"
+          properties: {}
+"#;
+        let config: AgentsConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.agents.len(), 1);
+        assert_eq!(config.agents[0].name, "测试Agent");
+        assert_eq!(config.agents[0].tools.len(), 1);
+        assert_eq!(config.agents[0].tools[0].name, "test_tool");
+    }
+
+    #[test]
+    fn yaml_deserialize_no_tools_defaults_to_empty() {
+        let yaml = r#"
+agents:
+  - name: "无工具Agent"
+    description: "测试"
+    system_prompt: "你是一个助手"
+    model: "deepseek-chat"
+"#;
+        let config: AgentsConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.agents[0].tools.is_empty());
+    }
+}

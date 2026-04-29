@@ -295,3 +295,183 @@ impl PendingToolCall {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn message_system_creates_with_correct_role() {
+        let msg = Message::system("系统初始化完成");
+        assert_eq!(msg.role, Role::System);
+        assert_eq!(msg.content, "系统初始化完成");
+        assert!(msg.tool_calls.is_none());
+        assert!(msg.tool_call_id.is_none());
+    }
+
+    #[test]
+    fn message_user_creates_with_correct_role() {
+        let msg = Message::user("请分析这个漏洞");
+        assert_eq!(msg.role, Role::User);
+        assert_eq!(msg.content, "请分析这个漏洞");
+    }
+
+    #[test]
+    fn message_assistant_creates_with_correct_role() {
+        let msg = Message::assistant("这是一个 XSS 漏洞");
+        assert_eq!(msg.role, Role::Assistant);
+        assert_eq!(msg.content, "这是一个 XSS 漏洞");
+    }
+
+    #[test]
+    fn message_tool_creates_with_tool_call_id() {
+        let msg = Message::tool("call_abc123", "扫描完成");
+        assert_eq!(msg.role, Role::Tool);
+        assert_eq!(msg.content, "扫描完成");
+        assert_eq!(msg.tool_call_id, Some("call_abc123".into()));
+    }
+
+    #[test]
+    fn message_system_handles_empty_content() {
+        let msg = Message::system("");
+        assert_eq!(msg.content, "");
+    }
+
+    #[test]
+    fn message_user_handles_unicode() {
+        let msg = Message::user("你好世界");
+        assert_eq!(msg.content, "你好世界");
+    }
+
+    #[test]
+    fn role_as_str_returns_lowercase() {
+        assert_eq!(Role::System.as_str(), "system");
+        assert_eq!(Role::User.as_str(), "user");
+        assert_eq!(Role::Assistant.as_str(), "assistant");
+        assert_eq!(Role::Tool.as_str(), "tool");
+    }
+
+    #[test]
+    fn role_display_matches_as_str() {
+        assert_eq!(Role::System.to_string(), "system");
+        assert_eq!(Role::User.to_string(), "user");
+        assert_eq!(Role::Assistant.to_string(), "assistant");
+        assert_eq!(Role::Tool.to_string(), "tool");
+    }
+
+    #[test]
+    fn role_deserialize_from_lowercase_json() {
+        let json = r#""user""#;
+        let role: Role = serde_json::from_str(json).unwrap();
+        assert_eq!(role, Role::User);
+    }
+
+    #[test]
+    fn role_serialize_to_lowercase_json() {
+        let role = Role::Assistant;
+        let json = serde_json::to_string(&role).unwrap();
+        assert_eq!(json, r#""assistant""#);
+    }
+
+    #[test]
+    fn usage_default_is_zero() {
+        let usage = Usage::default();
+        assert_eq!(usage.prompt_tokens, 0);
+        assert_eq!(usage.completion_tokens, 0);
+        assert_eq!(usage.total_tokens, 0);
+    }
+
+    #[test]
+    fn usage_cost_calculates_correctly() {
+        let usage = Usage {
+            prompt_tokens: 5000,
+            completion_tokens: 3000,
+            total_tokens: 8000,
+        };
+        let pricing = Pricing {
+            prompt_price_per_m: 2.0,
+            completion_price_per_m: 8.0,
+        };
+        let expected = (5000.0 / 1_000_000.0) * 2.0 + (3000.0 / 1_000_000.0) * 8.0;
+        let cost = usage.cost(&pricing);
+        assert!((cost - expected).abs() < 0.0001);
+    }
+
+    #[test]
+    fn usage_cost_zero_when_no_tokens() {
+        let usage = Usage::default();
+        let pricing = Pricing {
+            prompt_price_per_m: 2.0,
+            completion_price_per_m: 8.0,
+        };
+        assert_eq!(usage.cost(&pricing), 0.0);
+    }
+
+    #[test]
+    fn usage_cost_scales_linearly() {
+        let pricing = Pricing {
+            prompt_price_per_m: 2.0,
+            completion_price_per_m: 8.0,
+        };
+        let small = Usage {
+            prompt_tokens: 1000,
+            completion_tokens: 0,
+            total_tokens: 1000,
+        };
+        let large = Usage {
+            prompt_tokens: 10000,
+            completion_tokens: 0,
+            total_tokens: 10000,
+        };
+        assert!((large.cost(&pricing) - small.cost(&pricing) * 10.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn api_message_from_user_message() {
+        let msg = Message::user("测试消息");
+        let api: ApiMessage = (&msg).into();
+        assert_eq!(api.role, "user");
+        assert_eq!(api.content, "测试消息");
+        assert!(api.tool_calls.is_none());
+        assert!(api.tool_call_id.is_none());
+    }
+
+    #[test]
+    fn api_message_from_tool_message_preserves_tool_call_id() {
+        let msg = Message::tool("call_456", "执行结果");
+        let api: ApiMessage = (&msg).into();
+        assert_eq!(api.role, "tool");
+        assert_eq!(api.content, "执行结果");
+        assert_eq!(api.tool_call_id, Some("call_456".into()));
+    }
+
+    #[test]
+    fn pending_tool_call_new_initializes_empty() {
+        let ptc = PendingToolCall::new("call_001".into());
+        assert_eq!(ptc.id, "call_001");
+        assert_eq!(ptc.name, "");
+        assert_eq!(ptc.arguments, "");
+    }
+
+    #[test]
+    fn pending_tool_call_accumulates_data() {
+        let mut ptc = PendingToolCall::new("call_002".into());
+        ptc.name.push_str("run_nmap");
+        ptc.arguments.push_str(r#"{"target":"192.168.1.1"}"#);
+        assert_eq!(ptc.name, "run_nmap");
+        assert_eq!(ptc.arguments, r#"{"target":"192.168.1.1"}"#);
+    }
+
+    #[test]
+    fn tool_call_has_function_type() {
+        let tc = ToolCall {
+            id: "t1".into(),
+            call_type: "function".into(),
+            function: ToolFunction {
+                name: "test_tool".into(),
+                arguments: r#"{}"#.into(),
+            },
+        };
+        assert_eq!(tc.call_type, "function");
+    }
+}
