@@ -30,7 +30,7 @@ fn default_agents() -> Vec<AgentConfig> {
             system_prompt: "你是一个专业的网络安全红队专家，精通渗透测试、漏洞挖掘、社会工程学攻击和防御。\
                 你熟悉 Kali Linux、Metasploit、Nmap、Burp Suite 等工具的使用。\
                 你的回答应当专业、准确、可操作。".into(),
-            model: "deepseek-chat".into(),
+            model: "deepseek-v4-pro".into(),
             tools: vec![],
         },
         AgentConfig {
@@ -38,7 +38,7 @@ fn default_agents() -> Vec<AgentConfig> {
             description: "代码安全审计与漏洞分析".into(),
             system_prompt: "你是一个资深的代码安全审计专家，擅长发现代码中的安全漏洞、\
                 逻辑缺陷和不合规的编码实践。你精通多种编程语言的安全最佳实践。".into(),
-            model: "deepseek-chat".into(),
+            model: "deepseek-v4-pro".into(),
             tools: vec![],
         },
         AgentConfig {
@@ -46,7 +46,7 @@ fn default_agents() -> Vec<AgentConfig> {
             description: "威胁情报收集与分析".into(),
             system_prompt: "你是一个经验丰富的威胁情报分析师，擅长分析 APT 攻击、恶意软件行为、\
                 攻击链追踪和 IOC 提取。你能够解读 MITRE ATT&CK 框架中的战术和技术。".into(),
-            model: "deepseek-chat".into(),
+            model: "deepseek-v4-pro".into(),
             tools: vec![],
         },
     ]
@@ -165,7 +165,7 @@ fn cleanup_terminal() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// 程序入口 —— 初始化终端、加载配置、启动事件循环
+/// 程序入口 —— 初始化终端、加载配置、查询余额、启动事件循环
 fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
@@ -182,9 +182,28 @@ fn main() -> anyhow::Result<()> {
     terminal.clear()?;
 
     let rt = tokio::runtime::Runtime::new()?;
-    let (_tx, _rx) = mpsc::unbounded_channel::<Action>();
+    let (tx, _rx) = mpsc::unbounded_channel::<Action>();
 
     let mut app = App::new(agents, app_config);
+
+    let balance_result = rt.block_on(app.client.check_balance());
+    match balance_result {
+        Ok(info) => {
+            if info.is_available {
+                let total: f64 = info
+                    .balance_infos
+                    .iter()
+                    .filter_map(|b| b.total_balance.parse::<f64>().ok())
+                    .sum();
+                app.status_message = format!("余额充足: {:.2}", total);
+            } else {
+                app.status_message = "余额不足，请充值".into();
+            }
+        }
+        Err(e) => {
+            app.status_message = format!("余额查询失败: {}", &e[..e.len().min(40)]);
+        }
+    }
 
     let tick_duration = Duration::from_millis(100);
     let mut last_tick = std::time::Instant::now();
@@ -202,25 +221,29 @@ fn main() -> anyhow::Result<()> {
             if event::poll(timeout)? {
                 let ev = event::read()?;
 
-            match ev {
-                Event::Key(key) => {
-                    if let Some(action) = process_key(&mut app, key) {
-                        app_update(&mut app, action);
+                match ev {
+                    Event::Key(key) => {
+                        if let Some(action) = process_key(&mut app, key) {
+                            let is_submit = matches!(&action, Action::SubmitMessage(_));
+                            app_update(&mut app, action);
+                            if is_submit {
+                                app.send_stream_chat_request(tx.clone());
+                            }
+                        }
                     }
+                    Event::Resize(w, h) => {
+                        app_update(&mut app, Action::Resize(w, h));
+                    }
+                    _ => {}
                 }
-                Event::Resize(w, h) => {
-                    app_update(&mut app, Action::Resize(w, h));
-                }
-                _ => {}
+            }
+
+            if last_tick.elapsed() >= tick_duration {
+                app_update(&mut app, Action::Tick);
+                last_tick = std::time::Instant::now();
             }
         }
-
-        if last_tick.elapsed() >= tick_duration {
-            app_update(&mut app, Action::Tick);
-            last_tick = std::time::Instant::now();
-        }
-    }
-});
+    });
 
     cleanup_terminal()?;
 
