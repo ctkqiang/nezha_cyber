@@ -6,18 +6,12 @@
 //! 3. 创建 App 状态与 mpsc 通道
 //! 4. 进入主循环：读取事件 → update 状态 → 重绘界面
 
-mod action;
-mod api;
-mod agent;
-mod app;
-mod ui;
-
 use std::env;
 use std::time::Duration;
 
-use action::Action;
-use agent::config::{AgentConfig, AgentsConfig, AppConfig};
-use app::App;
+use nezha_cyber::action::Action;
+use nezha_cyber::agent::config::{AgentConfig, AgentsConfig, AppConfig};
+use nezha_cyber::app::{App, update as app_update};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
@@ -197,7 +191,7 @@ fn main() -> anyhow::Result<()> {
 
     let result = rt.block_on(async {
         loop {
-            terminal.draw(|frame| ui::render::render(frame, &app))?;
+            terminal.draw(|frame| nezha_cyber::ui::render::render(frame, &app))?;
 
             if app.should_quit {
                 break Ok::<_, anyhow::Error>(());
@@ -208,25 +202,25 @@ fn main() -> anyhow::Result<()> {
             if event::poll(timeout)? {
                 let ev = event::read()?;
 
-                match ev {
-                    Event::Key(key) => {
-                        if let Some(action) = process_key(&mut app, key) {
-                            app::update(&mut app, action);
-                        }
+            match ev {
+                Event::Key(key) => {
+                    if let Some(action) = process_key(&mut app, key) {
+                        app_update(&mut app, action);
                     }
-                    Event::Resize(w, h) => {
-                        app::update(&mut app, Action::Resize(w, h));
-                    }
-                    _ => {}
                 }
-            }
-
-            if last_tick.elapsed() >= tick_duration {
-                app::update(&mut app, Action::Tick);
-                last_tick = std::time::Instant::now();
+                Event::Resize(w, h) => {
+                    app_update(&mut app, Action::Resize(w, h));
+                }
+                _ => {}
             }
         }
-    });
+
+        if last_tick.elapsed() >= tick_duration {
+            app_update(&mut app, Action::Tick);
+            last_tick = std::time::Instant::now();
+        }
+    }
+});
 
     cleanup_terminal()?;
 
