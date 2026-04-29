@@ -182,7 +182,7 @@ fn main() -> anyhow::Result<()> {
     terminal.clear()?;
 
     let rt = tokio::runtime::Runtime::new()?;
-    let (tx, _rx) = mpsc::unbounded_channel::<Action>();
+    let (tx, mut rx) = mpsc::unbounded_channel::<Action>();
 
     let mut app = App::new(agents, app_config);
 
@@ -210,6 +210,10 @@ fn main() -> anyhow::Result<()> {
 
     let result = rt.block_on(async {
         loop {
+            while let Ok(action) = rx.try_recv() {
+                app_update(&mut app, action);
+            }
+
             terminal.draw(|frame| nezha_cyber::ui::render::render(frame, &app))?;
 
             if app.should_quit {
