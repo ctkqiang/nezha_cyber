@@ -1,0 +1,33 @@
+# =============================================================================
+# 哪吒网络安全 TUI —— Docker Compose 开发配置
+#
+# 使用方法:
+#   1. 创建 .env 文件: echo "DEEPSEEK_TOKEN=sk-xxx" > .env
+#   2. 构建并启动: docker compose up -d
+#   3. 查看日志:    docker compose logs -f
+#   4. 停止:        docker compose down
+#
+# 注意: TUI 应用在 docker compose 中运行时，需要分配 TTY。
+#       使用 `docker compose run --rm nezha` 进行交互式会话。
+# =============================================================================
+
+services:
+  nezha-cyber:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      tags:
+        - "nezha-cyber:latest"
+    image: nezha-cyber:latest
+    container_name: nezha-cyber
+    environment:
+      - DEEPSEEK_TOKEN=${DEEPSEEK_TOKEN:-}
+    env_file:
+      - .env
+    stdin_open: true
+    tty: true
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    read_only: false
+    network_mode: bridge

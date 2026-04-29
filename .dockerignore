@@ -1,0 +1,35 @@
+# 构建产物
+/target
+
+# IDE 与编辑器
+.trae
+.vscode
+.idea
+
+# 敏感文件
+.env
+deploy.sh
+*.pem
+*.key
+
+# 文档 (PlantUML 源码，不需要在镜像中)
+docs/
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# README
+README.md
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# macOS
+.DS_Store
+
+# 编译缓存
+**/*.rs.bk
