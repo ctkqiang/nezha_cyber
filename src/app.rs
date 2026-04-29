@@ -368,6 +368,75 @@ pub fn update(app: &mut App, action: Action) -> bool {
             true
         }
 
+        Action::CommandPaletteSubmit(input) => {
+            let input = input.trim().to_string();
+            app.command_palette_open = false;
+            app.command_palette_input.clear();
+            app.focus = Focus::ChatInput;
+
+            if input.starts_with("/model ") {
+                let model = input[7..].trim().to_string();
+                if let Some(tab) = app.tabs.get_mut(app.active_tab) {
+                    tab.model = model.clone();
+                }
+                app.client.set_model(model);
+            } else if input.starts_with("/theme ") {
+                let theme = input[7..].trim().to_string();
+                app.theme = theme;
+            } else if input == "/new" {
+                let id = app.tabs.len();
+                let default_model = app.client.model().to_string();
+                let default_agent = app
+                    .agents
+                    .first()
+                    .map(|a| a.name.clone())
+                    .unwrap_or_default();
+                let tab = Tab::new(
+                    id,
+                    format!("会话 {}", id + 1),
+                    &default_model,
+                    &default_agent,
+                );
+                app.tabs.push(tab);
+                app.active_tab = app.tabs.len() - 1;
+            } else if input == "/close" {
+                let idx = app.active_tab;
+                if app.tabs.len() > 1 && idx < app.tabs.len() {
+                    app.tabs.remove(idx);
+                    if app.active_tab >= app.tabs.len() {
+                        app.active_tab = app.tabs.len() - 1;
+                    }
+                }
+            } else if input == "/compact" || input == "/fork" || input == "/export" {
+                app.status_message = format!("命令 '{}' 尚未实现", input);
+            } else {
+                app.status_message = format!("未知命令: {}", input);
+            }
+            true
+        }
+
+        Action::ScrollUp => {
+            let tab = app.active_tab_mut();
+            if tab.scroll_offset > 0 {
+                tab.scroll_offset = tab.scroll_offset.saturating_sub(1);
+                tab.auto_scroll = false;
+            }
+            true
+        }
+
+        Action::ScrollDown => {
+            let tab = app.active_tab_mut();
+            tab.scroll_offset += 1;
+            true
+        }
+
+        Action::AutoScroll => {
+            let tab = app.active_tab_mut();
+            tab.auto_scroll = true;
+            tab.scroll_offset = 0;
+            true
+        }
+
         Action::ChangeTheme(theme) => {
             app.theme = theme;
             true
@@ -824,5 +893,91 @@ mod tests {
         let mut app = make_app();
         app.active_tab_mut().input_buffer.push('a');
         assert_eq!(app.active_tab().input_buffer, "a");
+    }
+
+    #[test]
+    fn update_scroll_up_decrements_offset() {
+        let mut app = make_app();
+        app.active_tab_mut().scroll_offset = 5;
+        app.active_tab_mut().auto_scroll = true;
+        update(&mut app, Action::ScrollUp);
+        assert_eq!(app.active_tab().scroll_offset, 4);
+        assert!(!app.active_tab().auto_scroll);
+    }
+
+    #[test]
+    fn update_scroll_up_at_zero_stays_at_zero() {
+        let mut app = make_app();
+        app.active_tab_mut().scroll_offset = 0;
+        update(&mut app, Action::ScrollUp);
+        assert_eq!(app.active_tab().scroll_offset, 0);
+    }
+
+    #[test]
+    fn update_scroll_down_increments_offset() {
+        let mut app = make_app();
+        update(&mut app, Action::ScrollDown);
+        assert_eq!(app.active_tab().scroll_offset, 1);
+    }
+
+    #[test]
+    fn update_auto_scroll_resets_state() {
+        let mut app = make_app();
+        app.active_tab_mut().scroll_offset = 10;
+        app.active_tab_mut().auto_scroll = false;
+        update(&mut app, Action::AutoScroll);
+        assert_eq!(app.active_tab().scroll_offset, 0);
+        assert!(app.active_tab().auto_scroll);
+    }
+
+    #[test]
+    fn update_command_palette_submit_model_switch() {
+        let mut app = make_app();
+        update(
+            &mut app,
+            Action::CommandPaletteSubmit("/model deepseek-reasoner".into()),
+        );
+        assert!(!app.command_palette_open);
+        assert_eq!(app.focus, Focus::ChatInput);
+        assert_eq!(app.tabs[0].model, "deepseek-reasoner");
+        assert_eq!(app.client.model(), "deepseek-reasoner");
+    }
+
+    #[test]
+    fn update_command_palette_submit_theme_switch() {
+        let mut app = make_app();
+        update(
+            &mut app,
+            Action::CommandPaletteSubmit("/theme daylight".into()),
+        );
+        assert_eq!(app.theme, "daylight");
+    }
+
+    #[test]
+    fn update_command_palette_submit_new_tab() {
+        let mut app = make_app();
+        assert_eq!(app.tabs.len(), 1);
+        update(&mut app, Action::CommandPaletteSubmit("/new".into()));
+        assert_eq!(app.tabs.len(), 2);
+        assert_eq!(app.active_tab, 1);
+    }
+
+    #[test]
+    fn update_command_palette_submit_close_tab() {
+        let mut app = make_app();
+        update(&mut app, Action::NewTab);
+        assert_eq!(app.tabs.len(), 2);
+        update(&mut app, Action::CommandPaletteSubmit("/close".into()));
+        assert_eq!(app.tabs.len(), 1);
+    }
+
+    #[test]
+    fn update_command_palette_submit_unknown_command() {
+        let mut app = make_app();
+        update(
+            &mut app,
+            Action::CommandPaletteSubmit("/invalid_cmd".into()),
+        );
+        assert!(app.status_message.contains("未知命令"));
     }
 }

@@ -72,6 +72,14 @@ pub enum Action {
     },
     ConfirmToolCall(ToolCallConfirmation),
 
+    // ---- 命令面板交互 ----
+    CommandPaletteSubmit(String),
+
+    // ---- 消息列表滚动 ----
+    ScrollUp,
+    ScrollDown,
+    AutoScroll,
+
     // ---- 模型与主题切换 ----
     ChangeTheme(String),
     ChangeModel {

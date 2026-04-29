@@ -13,7 +13,7 @@ use nezha_cyber::action::Action;
 use nezha_cyber::agent::config::{AgentConfig, AgentsConfig, AppConfig};
 use nezha_cyber::app::{App, update as app_update};
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -114,7 +114,7 @@ fn key_event_to_action(key: &crossterm::event::KeyEvent) -> Option<Action> {
     }
 }
 
-/// 处理键盘输入 —— 区分命令快捷键与文本输入
+/// 处理键盘输入 —— 区分命令快捷键与文本输入，命令面板模式下重定向输入
 fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> Option<Action> {
     if let Some(action) = key_event_to_action(&key) {
         return Some(action);
@@ -122,6 +122,10 @@ fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> Option<Action>
 
     if key.kind == KeyEventKind::Release {
         return None;
+    }
+
+    if app.command_palette_open {
+        return process_command_palette_key(app, key);
     }
 
     match (key.code, key.modifiers) {
@@ -146,11 +150,50 @@ fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> Option<Action>
             None
         }
         (KeyCode::Esc, _) => {
-            if app.command_palette_open {
-                Some(Action::OpenCommandPalette)
-            } else {
-                None
+            None
+        }
+        (KeyCode::Up, _) => Some(Action::ScrollUp),
+        (KeyCode::Down, _) => Some(Action::ScrollDown),
+        (KeyCode::PageUp, _) => {
+            for _ in 0..5 {
+                if app.active_tab().scroll_offset > 0 {
+                    app.active_tab_mut().scroll_offset = app.active_tab().scroll_offset.saturating_sub(1);
+                }
             }
+            app.active_tab_mut().auto_scroll = false;
+            None
+        }
+        (KeyCode::PageDown, _) => {
+            app.active_tab_mut().scroll_offset += 5;
+            None
+        }
+        _ => None,
+    }
+}
+
+/// 命令面板键盘处理 —— 输入搜索关键词，Enter 提交，Esc 关闭
+fn process_command_palette_key(app: &mut App, key: crossterm::event::KeyEvent) -> Option<Action> {
+    match (key.code, key.modifiers) {
+        (KeyCode::Enter, _) => {
+            let input = app.command_palette_input.clone();
+            if !input.trim().is_empty() {
+                Some(Action::CommandPaletteSubmit(input))
+            } else {
+                Some(Action::OpenCommandPalette)
+            }
+        }
+        (KeyCode::Esc, _) => Some(Action::OpenCommandPalette),
+        (KeyCode::Char(c), m) if m == KeyModifiers::NONE || m == KeyModifiers::SHIFT => {
+            app.command_palette_input.push(c);
+            None
+        }
+        (KeyCode::Backspace, _) => {
+            app.command_palette_input.pop();
+            None
+        }
+        (KeyCode::Char(' '), _) => {
+            app.command_palette_input.push(' ');
+            None
         }
         _ => None,
     }
@@ -238,6 +281,15 @@ fn main() -> anyhow::Result<()> {
                     Event::Resize(w, h) => {
                         app_update(&mut app, Action::Resize(w, h));
                     }
+                    Event::Mouse(mouse) => match mouse.kind {
+                        MouseEventKind::ScrollUp => {
+                            app_update(&mut app, Action::ScrollUp);
+                        }
+                        MouseEventKind::ScrollDown => {
+                            app_update(&mut app, Action::ScrollDown);
+                        }
+                        _ => {}
+                    },
                     _ => {}
                 }
             }

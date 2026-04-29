@@ -5,10 +5,10 @@
 
 use ratatui::{
     Frame,
-    layout::{Layout, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, BorderType, Borders, List, ListItem, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph},
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -212,12 +212,23 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
         lines.push(Line::from(""));
     }
 
+    let total_lines = lines.len();
+    let visible = area.height as usize;
+    let max_offset = total_lines.saturating_sub(visible);
+    let mut scroll = tab.scroll_offset.min(max_offset);
+
+    if tab.auto_scroll && total_lines > visible {
+        scroll = max_offset;
+    }
+
     let messages_block = Block::default()
         .borders(Borders::NONE)
         .style(Style::default().bg(theme.bg));
 
     frame.render_widget(
-        Paragraph::new(Text::from(lines)).block(messages_block),
+        Paragraph::new(Text::from(lines))
+            .block(messages_block)
+            .scroll((scroll as u16, 0)),
         area,
     );
 }
@@ -291,7 +302,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
 }
 
 /// 命令面板（Ctrl+K）
-fn render_command_palette(frame: &mut Frame, _app: &App, layout: &AppLayout, theme: &Theme) {
+fn render_command_palette(frame: &mut Frame, app: &App, layout: &AppLayout, theme: &Theme) {
     let Some(palette_area) = layout.command_palette else {
         return;
     };
@@ -301,34 +312,80 @@ fn render_command_palette(frame: &mut Frame, _app: &App, layout: &AppLayout, the
         .border_type(BorderType::Double)
         .border_style(Style::default().fg(theme.accent))
         .title(Span::styled(
-            " 命令面板 (Ctrl+K) ",
+            " 命令面板 ",
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ))
         .style(Style::default().bg(theme.input_bg));
 
-    let commands = vec![
-        "/compact    - 压缩上下文",
-        "/fork       - 复制当前会话",
-        "/model      - 切换模型",
-        "/theme      - 切换主题",
-        "/export     - 导出对话",
-        "/new        - 新建标签页",
-        "/close      - 关闭标签页",
-        "Ctrl+N      - 新建标签",
-        "Ctrl+W      - 关闭标签",
-        "Ctrl+K      - 切换命令面板",
-        "Tab         - 切换焦点",
-        "Enter       - 发送消息",
+    let inner = palette_block.inner(palette_area);
+
+    let all_commands = vec![
+        ("/model", "切换模型  —  /model deepseek-v4-pro"),
+        ("/theme", "切换主题  —  /theme daylight"),
+        ("/new", "新建标签页"),
+        ("/close", "关闭当前标签页"),
+        ("/compact", "压缩上下文"),
+        ("/fork", "复制当前会话"),
+        ("/export", "导出对话"),
+        ("Ctrl+N", "新建标签页 (快捷键)"),
+        ("Ctrl+B", "折叠侧边栏 (快捷键)"),
+        ("Ctrl+K", "切换命令面板 (快捷键)"),
     ];
 
-    let list_items: Vec<ListItem> = commands
+    let filter = app.command_palette_input.to_lowercase();
+    let filtered: Vec<&(&str, &str)> = all_commands
         .iter()
-        .map(|c| ListItem::new(Span::styled(*c, Style::default().fg(theme.fg))))
+        .filter(|(cmd, desc)| {
+            let combined = format!("{} {}", cmd, desc).to_lowercase();
+            filter.is_empty() || combined.contains(&filter)
+        })
         .collect();
 
-    let list = List::new(list_items).block(palette_block);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .split(inner);
 
-    frame.render_widget(list, palette_area);
+    let input_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Plain)
+        .border_style(Style::default().fg(theme.accent))
+        .title(Span::styled(
+            " 输入命令 ",
+            Style::default().fg(theme.accent),
+        ));
+    let input_text = format!("> {}", app.command_palette_input);
+    frame.render_widget(Paragraph::new(input_text).block(input_block), chunks[0]);
+
+    let lines: Vec<Line> = filtered
+        .iter()
+        .map(|(cmd, desc)| {
+            Line::from(vec![
+                Span::styled(
+                    format!(" {}", cmd),
+                    Style::default()
+                        .fg(theme.accent)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(desc.to_string(), Style::default().fg(theme.sidebar_fg)),
+            ])
+        })
+        .collect();
+
+    let list_block = Block::default()
+        .borders(Borders::NONE)
+        .style(Style::default().bg(theme.input_bg));
+    let text = if lines.is_empty() {
+        Text::from(Line::from(Span::styled(
+            " 无匹配命令",
+            Style::default().fg(theme.warning_color),
+        )))
+    } else {
+        Text::from(lines)
+    };
+
+    frame.render_widget(Paragraph::new(text).block(list_block), chunks[1]);
+    frame.render_widget(palette_block, palette_area);
 }
