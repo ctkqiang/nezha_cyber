@@ -40,6 +40,7 @@ pub struct Tab {
     pub input_buffer: String,
     pub scroll_offset: usize,
     pub auto_scroll: bool,
+    pub thinking_ticks: u64,
     pub pending_tool_calls: HashMap<String, ToolCallStatus>,
 }
 
@@ -60,6 +61,7 @@ impl Tab {
             input_buffer: String::new(),
             scroll_offset: 0,
             auto_scroll: true,
+            thinking_ticks: 0,
             pending_tool_calls: HashMap::new(),
         }
     }
@@ -169,7 +171,11 @@ pub fn update(app: &mut App, action: Action) -> bool {
     match action {
         Action::Key(_event) => true,
 
-        Action::Tick => false,
+        Action::Tick => {
+            let tab = app.active_tab_mut();
+            tab.thinking_ticks = tab.thinking_ticks.wrapping_add(1);
+            false
+        }
 
         Action::Resize(_w, _h) => true,
 

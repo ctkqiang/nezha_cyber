@@ -4,15 +4,15 @@
 //! 所有渲染函数为纯函数，接收 Frame 和 App 引用，不修改状态。
 
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Paragraph},
+    Frame,
 };
 use unicode_width::UnicodeWidthStr;
 
-use super::layout::{AppLayout, calculate};
+use super::layout::{calculate, AppLayout};
 use super::theme::Theme;
 use crate::app::{App, Focus};
 
@@ -170,7 +170,28 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let tab = app.active_tab();
     let mut lines: Vec<Line> = Vec::new();
 
-    for msg in &tab.messages {
+    for (idx, msg) in tab.messages.iter().enumerate() {
+        let is_last = idx == tab.messages.len() - 1;
+        let is_empty_assistant =
+            is_last && msg.role == crate::api::types::Role::Assistant && msg.content.is_empty();
+
+        if is_empty_assistant {
+            let dots = match tab.thinking_ticks % 4 {
+                0 => ".",
+                1 => "..",
+                2 => "...",
+                _ => "....",
+            };
+            lines.push(Line::from(Span::styled(
+                format!("[哪吒] 正在思考{}", dots),
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::ITALIC),
+            )));
+            lines.push(Line::from(""));
+            continue;
+        }
+
         let (role_label, color) = match msg.role {
             crate::api::types::Role::User => ("你", theme.user_msg_color),
             crate::api::types::Role::Assistant => ("哪吒", theme.assistant_msg_color),
