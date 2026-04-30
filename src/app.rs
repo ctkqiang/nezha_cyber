@@ -473,6 +473,30 @@ pub fn update(app: &mut App, action: Action) -> bool {
             }
             true
         }
+
+        Action::SwitchAgentByIndex(idx) => {
+            if let Some(agent) = app.agents.get(idx) {
+                let name = agent.name.clone();
+                app.active_tab_mut().agent_name = name.clone();
+                app.status_message = format!("已切换到: {}", name);
+            }
+            true
+        }
+
+        Action::SwitchAgentNext => {
+            if !app.agents.is_empty() {
+                let current = app
+                    .agents
+                    .iter()
+                    .position(|a| a.name == app.active_tab().agent_name)
+                    .unwrap_or(0);
+                let next = (current + 1) % app.agents.len();
+                let name = app.agents[next].name.clone();
+                app.active_tab_mut().agent_name = name.clone();
+                app.status_message = format!("已切换到: {}", name);
+            }
+            true
+        }
     }
 }
 
