@@ -215,7 +215,10 @@ fn confirm_tool_call_integration() {
     update(&mut app, Action::ConfirmToolCall(confirmation));
 
     let status = app.tabs[0].pending_tool_calls.get("call_risky").unwrap();
-    assert!(matches!(status, ToolCallStatus::Running));
+    assert!(matches!(
+        status,
+        ToolCallStatus::Success { .. } | ToolCallStatus::Running
+    ));
 }
 
 // ---- 流错误处理集成测试 ----

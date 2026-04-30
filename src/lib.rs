@@ -7,4 +7,5 @@ pub mod agent;
 pub mod api;
 pub mod app;
 pub mod persistence;
+pub mod tools;
 pub mod ui;

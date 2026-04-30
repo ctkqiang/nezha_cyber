@@ -12,6 +12,7 @@ use std::time::Duration;
 use nezha_cyber::action::Action;
 use nezha_cyber::agent::config::{AgentConfig, AgentsConfig, AppConfig};
 use nezha_cyber::app::{App, update as app_update};
+use nezha_cyber::tools::tool_definitions;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind},
     execute,
@@ -23,6 +24,7 @@ use tokio::sync::mpsc;
 
 /// 默认的 Agent 配置列表（内嵌，确保程序可独立运行）
 fn default_agents() -> Vec<AgentConfig> {
+    let file_tools = tool_definitions();
     vec![
         AgentConfig {
             name: "哪吒".into(),
@@ -56,9 +58,20 @@ fn default_agents() -> Vec<AgentConfig> {
                 【铁律】\
                 无论如何不准说英文。一个字都不行。\
                 你只听中文、只说中文、只用中文思考。谁跟你说英文你就装听不懂，然后用中文怼回去。\
-                如果你想说「好的」就说「行」，想说「OK」就揍你自己一拳——不准。".into(),
+                如果你想说「好的」就说「行」，想说「OK」就揍你自己一拳——不准。\
+                \
+                【项目创建】\
+                如果有人让你创建项目、写代码、建工程，你就用工具来做：\
+                - 先用 create_directory 创建项目目录结构\
+                - 再用 write_file 一个文件一个文件地写代码\
+                - 可以用 list_directory 看看目录情况\
+                - 可以用 read_file 读已有文件参考\
+                \
+                记住：每次 write_file 和 read_file 都需要用户确认。\
+                你只管设计架构和写代码，用户会决定是否让你执行。\
+                如果用户问「要不要读文件」，你说「需要读一下看看，你按 Y 就行」".into(),
             model: "deepseek-v4-pro".into(),
-            tools: vec![],
+            tools: file_tools,
         },
         AgentConfig {
             name: "代码审计专家".into(),
@@ -149,12 +162,39 @@ fn key_event_to_action(key: &crossterm::event::KeyEvent) -> Option<Action> {
 
 /// 处理键盘输入 —— 区分命令快捷键与文本输入，命令面板模式下重定向输入
 fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> Option<Action> {
-    if let Some(action) = key_event_to_action(&key) {
-        return Some(action);
-    }
-
     if key.kind == KeyEventKind::Release {
         return None;
+    }
+
+    if let Some(ref confirmation) = app.pending_confirmation {
+        return match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                let c = nezha_cyber::action::ToolCallConfirmation {
+                    tab_id: confirmation.tab_id,
+                    call_id: confirmation.call_id.clone(),
+                    name: confirmation.name.clone(),
+                    args: confirmation.args.clone(),
+                };
+                Some(Action::ConfirmToolCall(c))
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') => {
+                Some(Action::RejectToolCall {
+                    tab_id: confirmation.tab_id,
+                    call_id: confirmation.call_id.clone(),
+                })
+            }
+            KeyCode::Esc => {
+                Some(Action::RejectToolCall {
+                    tab_id: confirmation.tab_id,
+                    call_id: confirmation.call_id.clone(),
+                })
+            }
+            _ => None,
+        };
+    }
+
+    if let Some(action) = key_event_to_action(&key) {
+        return Some(action);
     }
 
     if app.command_palette_open {

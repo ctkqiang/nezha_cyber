@@ -29,6 +29,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     }
     render_main_area(frame, app, &layout, &theme);
     render_command_palette(frame, app, &layout, &theme);
+    render_confirmation_dialog(frame, app, &theme);
 }
 
 fn render_sidebar(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
@@ -421,6 +422,51 @@ fn render_command_palette(frame: &mut Frame, app: &App, layout: &AppLayout, them
 
     frame.render_widget(Paragraph::new(text).block(list_block), chunks[1]);
     frame.render_widget(palette_block, palette_area);
+}
+
+/// 工具调用确认对话框 —— 居中浮层，显示操作描述 + Y/N 选项
+fn render_confirmation_dialog(frame: &mut Frame, app: &App, theme: &Theme) {
+    let Some(ref conf) = app.pending_confirmation else {
+        return;
+    };
+
+    let area = frame.area();
+    let w = area.width.min(58);
+    let h = 7u16;
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    let dialog_area = Rect::new(x, y, w, h);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(Style::default().fg(theme.warning_color))
+        .style(Style::default().bg(theme.tab_active_bg))
+        .title(Span::styled(
+            format!(" 工具调用确认: {} ", conf.name),
+            Style::default()
+                .fg(theme.warning_color)
+                .add_modifier(Modifier::BOLD),
+        ));
+
+    let inner = block.inner(dialog_area);
+    frame.render_widget(block, dialog_area);
+
+    let lines = vec![
+        Line::from(Span::styled(
+            conf.description.clone(),
+            Style::default().fg(theme.fg),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            " 按 [Y] 确认执行  |  [N] 拒绝  |  [Esc] 忽略",
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        )),
+    ];
+
+    frame.render_widget(Paragraph::new(Text::from(lines)), inner);
 }
 
 /// 按终端宽度手动换行，保持缩进

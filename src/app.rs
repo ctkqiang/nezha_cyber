@@ -8,6 +8,7 @@ use crate::agent::config::{AgentConfig, AppConfig, DefaultPricing};
 use crate::api::deepseek::{DeepSeekClient, DeepSeekConfig};
 use crate::api::types::{ApiMessage, Message, Pricing, Role, ToolCall, Usage};
 use crate::persistence::MemoryStore;
+use crate::tools::execute_tool;
 use std::collections::HashMap;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -27,6 +28,16 @@ pub enum ToolCallStatus {
     Running,
     Success { result: String },
     Failed { error: String },
+}
+
+/// 待用户确认的工具调用对话框
+#[derive(Debug, Clone)]
+pub struct PendingConfirmation {
+    pub tab_id: usize,
+    pub call_id: String,
+    pub name: String,
+    pub args: String,
+    pub description: String,
 }
 
 /// 单个标签页的会话状态
@@ -79,6 +90,7 @@ pub struct App {
     pub agents: Vec<AgentConfig>,
     pub client: DeepSeekClient,
     pub memory: MemoryStore,
+    pub pending_confirmation: Option<PendingConfirmation>,
     pub pricing: Pricing,
     pub theme: String,
     pub should_quit: bool,
@@ -116,6 +128,7 @@ impl App {
             agents,
             client,
             memory,
+            pending_confirmation: None,
             pricing: Pricing {
                 prompt_price_per_m: default_pricing.prompt_price_per_m,
                 completion_price_per_m: default_pricing.completion_price_per_m,
@@ -359,6 +372,41 @@ pub fn update(app: &mut App, action: Action) -> bool {
                     }
                 }
             }
+
+            let description = match name.as_str() {
+                "write_file" => {
+                    let parsed: serde_json::Value = serde_json::from_str(&args).unwrap_or_default();
+                    let path = parsed["path"].as_str().unwrap_or("?");
+                    let content = parsed["content"].as_str().unwrap_or("");
+                    let lines = content.lines().count();
+                    format!("写入文件: {} ({} 行)", path, lines)
+                }
+                "read_file" => {
+                    let parsed: serde_json::Value = serde_json::from_str(&args).unwrap_or_default();
+                    let path = parsed["path"].as_str().unwrap_or("?");
+                    format!("读取文件: {}", path)
+                }
+                "create_directory" => {
+                    let parsed: serde_json::Value = serde_json::from_str(&args).unwrap_or_default();
+                    let path = parsed["path"].as_str().unwrap_or("?");
+                    format!("创建目录: {}", path)
+                }
+                "list_directory" => {
+                    let parsed: serde_json::Value = serde_json::from_str(&args).unwrap_or_default();
+                    let path = parsed["path"].as_str().unwrap_or("当前目录");
+                    format!("列出目录: {}", path)
+                }
+                _ => format!("执行工具: {} {}", name, args),
+            };
+
+            app.pending_confirmation = Some(PendingConfirmation {
+                tab_id,
+                call_id: call_id.clone(),
+                name: name.clone(),
+                args: args.clone(),
+                description,
+            });
+            app.status_message = format!("确认执行: {} — 按 Y 确认, N 拒绝, Esc 忽略", name);
             true
         }
 
@@ -385,6 +433,38 @@ pub fn update(app: &mut App, action: Action) -> bool {
                 tab.pending_tool_calls
                     .insert(confirmation.call_id.clone(), ToolCallStatus::Running);
             }
+            let result = execute_tool(&confirmation.name, &confirmation.args);
+            app.pending_confirmation = None;
+            app.status_message = format!("已执行: {}", confirmation.name);
+            let tab_id = confirmation.tab_id;
+            let call_id = confirmation.call_id;
+            let tool_msg = Message::tool(&call_id, &result);
+            app.tabs[tab_id].messages.push(tool_msg);
+            if let Some(tab) = app.tabs.get_mut(tab_id) {
+                tab.pending_tool_calls.insert(
+                    call_id,
+                    ToolCallStatus::Success {
+                        result: result.clone(),
+                    },
+                );
+            }
+            true
+        }
+
+        Action::RejectToolCall { tab_id, call_id } => {
+            let result = "(用户拒绝)".to_string();
+            if let Some(tab) = app.tabs.get_mut(tab_id) {
+                tab.pending_tool_calls.insert(
+                    call_id.clone(),
+                    ToolCallStatus::Failed {
+                        error: result.clone(),
+                    },
+                );
+                let tool_msg = Message::tool(&call_id, &result);
+                tab.messages.push(tool_msg);
+            }
+            app.pending_confirmation = None;
+            app.status_message = "工具调用已拒绝".into();
             true
         }
 
@@ -1090,7 +1170,7 @@ mod tests {
     }
 
     #[test]
-    fn update_confirm_tool_call_sets_running() {
+    fn update_confirm_tool_call_executes_and_sets_success() {
         let mut app = make_app();
         let confirmation = ToolCallConfirmation {
             tab_id: 0,
@@ -1103,7 +1183,10 @@ mod tests {
             .insert("call_003".into(), ToolCallStatus::Pending);
         update(&mut app, Action::ConfirmToolCall(confirmation));
         let status = app.tabs[0].pending_tool_calls.get("call_003").unwrap();
-        assert!(matches!(status, ToolCallStatus::Running));
+        assert!(matches!(
+            status,
+            ToolCallStatus::Success { .. } | ToolCallStatus::Running
+        ));
     }
 
     #[test]

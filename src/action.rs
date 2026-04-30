@@ -71,6 +71,10 @@ pub enum Action {
         result: String,
     },
     ConfirmToolCall(ToolCallConfirmation),
+    RejectToolCall {
+        tab_id: usize,
+        call_id: String,
+    },
 
     // ---- 命令面板交互 ----
     CommandPaletteSubmit(String),
