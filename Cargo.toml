@@ -1,7 +1,21 @@
 [package]
 name = "nezha_cyber"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+description = "哪吒网络安全 —— DeepSeek 驱动的红队辅助 TUI 工具"
+authors = ["钟智强 <johnmelodymel@qq.com>"]
+license = "MIT"
+repository = "https://gitcode.com/ctkqiang_sr/nezha_cyber"
+homepage = "https://gitcode.com/ctkqiang_sr/nezha_cyber"
+readme = "README.md"
+keywords = [
+    "cybersecurity",
+    "tui",
+    "deepseek",
+    "penetration-testing",
+    "red-team",
+]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 ratatui = { version = "0.29", features = ["crossterm", "all-widgets"] }

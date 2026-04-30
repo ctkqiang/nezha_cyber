@@ -1,0 +1,32 @@
+# .github/release.yml
+
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+    authors:
+      - dependabot
+  categories:
+    - title: 新功能
+      labels:
+        - feat
+        - enhancement
+    - title: Bug 修复
+      labels:
+        - fix
+        - bug
+    - title: 文档
+      labels:
+        - docs
+        - documentation
+    - title: 测试
+      labels:
+        - test
+    - title: 重构与维护
+      labels:
+        - chore
+        - refactor
+        - ci
+    - title: 其他
+      labels:
+        - "*"

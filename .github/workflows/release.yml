@@ -1,0 +1,122 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+
+env:
+  CARGO_TERM_COLOR: always
+  BINARY_NAME: nezha_cyber
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            suffix: linux-amd64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            suffix: linux-arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            suffix: macos-amd64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            suffix: macos-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: 安装交叉编译工具链 (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: 构建 Release 二进制
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: 打包二进制 (Linux / macOS)
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar -czf ${{ env.BINARY_NAME }}-${{ matrix.suffix }}.tar.gz ${{ env.BINARY_NAME }}
+          sha256sum ${{ env.BINARY_NAME }}-${{ matrix.suffix }}.tar.gz > ${{ env.BINARY_NAME }}-${{ matrix.suffix }}.tar.gz.sha256
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-${{ matrix.suffix }}
+          path: |
+            target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}-${{ matrix.suffix }}.tar.gz
+            target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}-${{ matrix.suffix }}.tar.gz.sha256
+          if-no-files-found: error
+
+  github-release:
+    name: 发布 GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 下载所有构建产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 整理产物文件
+        run: |
+          mkdir -p dist
+          find artifacts -name "*.tar.gz" -exec cp {} dist/ \;
+          find artifacts -name "*.sha256" -exec cp {} dist/ \;
+          ls -la dist/
+
+      - name: 生成 Release 说明
+        run: |
+          echo "## 安装" > release_notes.md
+          echo "" >> release_notes.md
+          echo '```bash' >> release_notes.md
+          echo "# 通过 cargo 安装" >> release_notes.md
+          echo "cargo install nezha_cyber" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "# 或从源码安装" >> release_notes.md
+          echo "git clone https://gitcode.com/ctkqiang_sr/nezha_cyber.git" >> release_notes.md
+          echo "cd nezha_cyber" >> release_notes.md
+          echo "cargo install --path ." >> release_notes.md
+          echo '```' >> release_notes.md
+          echo "" >> release_notes.md
+          echo "## 校验" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "| 平台 | SHA256 |" >> release_notes.md
+          echo "|------|--------|" >> release_notes.md
+          for f in dist/*.sha256; do
+            PLATFORM=$(basename "$f" .tar.gz.sha256)
+            HASH=$(cat "$f")
+            echo "| $PLATFORM | \`$HASH\` |" >> release_notes.md
+          done
+          echo "" >> release_notes.md
+          echo "## 使用" >> release_notes.md
+          echo "" >> release_notes.md
+          echo '```bash' >> release_notes.md
+          echo "export DEEPSEEK_TOKEN=sk-xxx" >> release_notes.md
+          echo "nezha_cyber" >> release_notes.md
+          echo '```' >> release_notes.md
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          body_path: release_notes.md
+          generate_release_notes: true
