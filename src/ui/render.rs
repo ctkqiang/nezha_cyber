@@ -7,7 +7,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
     Frame,
 };
 use unicode_width::UnicodeWidthStr;
@@ -171,10 +171,10 @@ fn render_tab_bar(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     );
 }
 
-/// 消息列表区域
+/// 消息列表区域 — 使用 Paragraph::wrap 自动换行
 fn render_messages(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let tab = app.active_tab();
-    let mut lines: Vec<Line> = Vec::new();
+    let mut raw = String::new();
 
     for (idx, msg) in tab.messages.iter().enumerate() {
         let is_last = idx == tab.messages.len() - 1;
@@ -183,64 +183,52 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
 
         if is_empty_assistant {
             let dots = match tab.thinking_ticks % 4 {
-                0 => ".",
-                1 => "..",
-                2 => "...",
-                _ => "....",
+                0 => "",
+                1 => ".",
+                2 => "..",
+                _ => "...",
             };
-            lines.push(Line::from(Span::styled(
-                format!("[哪吒] 正在思考{}", dots),
-                Style::default()
-                    .fg(theme.accent)
-                    .add_modifier(Modifier::ITALIC),
-            )));
-            lines.push(Line::from(""));
+            raw.push_str(&format!("[哪吒] 正在思考{}\n", dots));
+            raw.push('\n');
             continue;
         }
 
-        let (role_label, color) = match msg.role {
-            crate::api::types::Role::User => ("你", theme.user_msg_color),
-            crate::api::types::Role::Assistant => ("哪吒", theme.assistant_msg_color),
-            crate::api::types::Role::System => ("系统", theme.warning_color),
-            crate::api::types::Role::Tool => ("工具", theme.success_color),
+        let role_label = match msg.role {
+            crate::api::types::Role::User => "[你]",
+            crate::api::types::Role::Assistant => "[哪吒]",
+            crate::api::types::Role::System => "[系统]",
+            crate::api::types::Role::Tool => "[工具]",
         };
 
-        lines.push(Line::from(Span::styled(
-            format!("[{}]", role_label),
-            Style::default().fg(color).add_modifier(Modifier::BOLD),
-        )));
+        raw.push_str(role_label);
+        raw.push('\n');
 
-        for content_line in msg.content.lines() {
-            lines.push(Line::from(Span::styled(
-                format!("  {}", content_line),
-                Style::default().fg(theme.fg),
-            )));
+        if !msg.content.is_empty() {
+            for line in msg.content.lines() {
+                raw.push_str(&format!("  {}\n", line));
+            }
         }
 
         if let Some(tool_calls) = &msg.tool_calls {
             for tc in tool_calls {
-                let status = tab.pending_tool_calls.get(&tc.id);
-                let status_str = match status {
-                    Some(ToolCallStatus::Success { .. }) => "✓",
-                    Some(ToolCallStatus::Failed { .. }) => "✗",
-                    Some(ToolCallStatus::Running) => "…",
-                    _ => "○",
+                let status_str = match tab.pending_tool_calls.get(&tc.id) {
+                    Some(ToolCallStatus::Success { .. }) => "OK",
+                    Some(ToolCallStatus::Failed { .. }) => "ERR",
+                    Some(ToolCallStatus::Running) => "...",
+                    _ => "...",
                 };
-                lines.push(Line::from(Span::styled(
-                    format!(
-                        "  🔧 {} {} {}",
-                        status_str, tc.function.name, tc.function.arguments
-                    ),
-                    Style::default().fg(theme.warning_color),
-                )));
+                raw.push_str(&format!(
+                    "  [{}] {}({})\n",
+                    status_str, tc.function.name, tc.function.arguments
+                ));
             }
         }
 
-        lines.push(Line::from(""));
+        raw.push('\n');
     }
 
-    let total_lines = lines.len();
     let visible = area.height as usize;
+    let total_lines = raw.lines().count();
     let max_offset = total_lines.saturating_sub(visible);
     let mut scroll = tab.scroll_offset.min(max_offset);
 
@@ -248,16 +236,13 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
         scroll = max_offset;
     }
 
-    let messages_block = Block::default()
-        .borders(Borders::NONE)
-        .style(Style::default().bg(theme.bg));
+    let text = Span::styled(raw, Style::default().fg(theme.fg));
+    let para = Paragraph::new(Text::from(text))
+        .block(Block::default().style(Style::default().bg(theme.bg)))
+        .wrap(Wrap { trim: false })
+        .scroll((scroll as u16, 0));
 
-    frame.render_widget(
-        Paragraph::new(Text::from(lines))
-            .block(messages_block)
-            .scroll((scroll as u16, 0)),
-        area,
-    );
+    frame.render_widget(para, area);
 }
 
 /// 输入区域
