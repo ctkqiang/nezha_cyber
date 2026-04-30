@@ -131,7 +131,7 @@ fn render_sidebar_agents(frame: &mut Frame, app: &App, area: Rect, theme: &Theme
     }
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        " 按 1/2/3 切换",
+        " Alt+1/2/3 切换",
         Style::default().fg(theme.accent_dim),
     )));
     frame.render_widget(Paragraph::new(Text::from(lines)), area);
@@ -345,7 +345,7 @@ fn render_command_palette(frame: &mut Frame, app: &App, layout: &AppLayout, them
         ("Ctrl+N", "新建标签页 (快捷键)"),
         ("Ctrl+B", "折叠侧边栏 (快捷键)"),
         ("Ctrl+K", "切换命令面板 (快捷键)"),
-        ("按 1/2/3", "侧边栏切换 Agent (快捷键)"),
+        ("按 Alt+1/2/3", "侧边栏切换 Agent (快捷键)"),
     ];
 
     let filter = app.command_palette_input.to_lowercase();

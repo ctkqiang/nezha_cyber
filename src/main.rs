@@ -158,21 +158,21 @@ fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> Option<Action>
     }
 
     match (key.code, key.modifiers) {
-        (KeyCode::Char('1'), KeyModifiers::NONE) => {
+        (KeyCode::Char('1'), KeyModifiers::ALT) => {
             if app.agents.len() >= 1 {
                 let name = app.agents[0].name.clone();
                 return Some(Action::SwitchAgent { tab_id: app.active_tab, agent_name: name });
             }
             None
         }
-        (KeyCode::Char('2'), KeyModifiers::NONE) => {
+        (KeyCode::Char('2'), KeyModifiers::ALT) => {
             if app.agents.len() >= 2 {
                 let name = app.agents[1].name.clone();
                 return Some(Action::SwitchAgent { tab_id: app.active_tab, agent_name: name });
             }
             None
         }
-        (KeyCode::Char('3'), KeyModifiers::NONE) => {
+        (KeyCode::Char('3'), KeyModifiers::ALT) => {
             if app.agents.len() >= 3 {
                 let name = app.agents[2].name.clone();
                 return Some(Action::SwitchAgent { tab_id: app.active_tab, agent_name: name });
