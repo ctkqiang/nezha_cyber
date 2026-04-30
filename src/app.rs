@@ -288,8 +288,8 @@ pub fn update(app: &mut App, action: Action) -> bool {
         Action::StreamDone {
             tab_id,
             message_id,
+            content,
             usage,
-            ..
         } => {
             if let Some(tab) = app.tabs.get_mut(tab_id) {
                 tab.total_usage.prompt_tokens += usage.prompt_tokens;
@@ -297,7 +297,9 @@ pub fn update(app: &mut App, action: Action) -> bool {
                 tab.total_usage.total_tokens += usage.total_tokens;
 
                 if let Some(msg) = tab.messages.iter_mut().find(|m| m.id == message_id) {
-                    if msg.content.is_empty() {
+                    if msg.content.is_empty() && !content.is_empty() {
+                        msg.content = content;
+                    } else if msg.content.is_empty() {
                         msg.content = "(空响应)".into();
                     }
                 }
@@ -410,7 +412,10 @@ pub fn update(app: &mut App, action: Action) -> bool {
                 let title = tab.title.clone();
                 let agent = tab.agent_name.clone();
                 let model = tab.model.clone();
-                match app.memory.save_conversation(&title, &agent, &model, &tab.messages) {
+                match app
+                    .memory
+                    .save_conversation(&title, &agent, &model, &tab.messages)
+                {
                     Ok(id) => {
                         app.status_message = format!("对话已保存 (ID: {})", id);
                         let _ = app.memory.trim_old_conversations();
@@ -456,12 +461,8 @@ pub fn update(app: &mut App, action: Action) -> bool {
                                 .first()
                                 .map(|a| a.name.clone())
                                 .unwrap_or_default();
-                            let mut new_tab = Tab::new(
-                                app.tabs.len(),
-                                title,
-                                &default_model,
-                                &default_agent,
-                            );
+                            let mut new_tab =
+                                Tab::new(app.tabs.len(), title, &default_model, &default_agent);
                             new_tab.messages = messages;
                             new_tab.auto_scroll = false;
                             new_tab.scroll_offset = 0;
@@ -688,7 +689,7 @@ mod tests {
 
     fn test_app_config() -> AppConfig {
         AppConfig {
-            api_base: "https://api.deepseek.com/v1".into(),
+            api_base: "https://api.deepseek.com".into(),
             api_key: "sk-test".into(),
             default_model: "deepseek-chat".into(),
             default_pricing: Some(DefaultPricing {

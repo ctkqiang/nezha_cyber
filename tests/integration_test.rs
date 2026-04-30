@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 fn test_app_config() -> AppConfig {
     AppConfig {
-        api_base: "https://api.deepseek.com/v1".into(),
+        api_base: "https://api.deepseek.com".into(),
         api_key: "sk-test".into(),
         default_model: "deepseek-chat".into(),
         default_pricing: Some(DefaultPricing {

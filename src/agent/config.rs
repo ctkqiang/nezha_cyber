@@ -71,7 +71,7 @@ pub struct AppConfig {
 }
 
 fn default_api_base() -> String {
-    "https://api.deepseek.com/v1".into()
+    "https://api.deepseek.com".into()
 }
 
 impl Default for AppConfig {
@@ -170,7 +170,7 @@ mod tests {
     #[test]
     fn app_config_default_values() {
         let config = AppConfig::default();
-        assert_eq!(config.api_base, "https://api.deepseek.com/v1");
+        assert_eq!(config.api_base, "https://api.deepseek.com");
         assert_eq!(config.default_model, "deepseek-v4-pro");
         assert!(config.api_key.is_empty());
         let pricing = config.default_pricing.unwrap();
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn app_config_default_api_base_matches_fn() {
-        assert_eq!(default_api_base(), "https://api.deepseek.com/v1");
+        assert_eq!(default_api_base(), "https://api.deepseek.com");
     }
 
     #[test]
