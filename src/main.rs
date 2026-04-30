@@ -311,7 +311,8 @@ fn main() -> anyhow::Result<()> {
                     .iter()
                     .filter_map(|b| b.total_balance.parse::<f64>().ok())
                     .sum();
-                app.status_message = format!("余额充足: {:.2}", total);
+                app.remaining_balance = total;
+                app.status_message = format!("余额: ¥{:.2}", total);
             } else {
                 app.status_message = "余额不足，请充值".into();
             }

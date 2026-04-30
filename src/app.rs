@@ -91,6 +91,7 @@ pub struct App {
     pub client: DeepSeekClient,
     pub memory: MemoryStore,
     pub pending_confirmation: Option<PendingConfirmation>,
+    pub remaining_balance: f64,
     pub pricing: Pricing,
     pub theme: String,
     pub should_quit: bool,
@@ -129,6 +130,7 @@ impl App {
             client,
             memory,
             pending_confirmation: None,
+            remaining_balance: 0.0,
             pricing: Pricing {
                 prompt_price_per_m: default_pricing.prompt_price_per_m,
                 completion_price_per_m: default_pricing.completion_price_per_m,

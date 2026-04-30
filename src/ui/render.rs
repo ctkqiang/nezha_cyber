@@ -72,11 +72,22 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
 fn render_sidebar_usage(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let tab = app.active_tab();
     let total_cost = tab.total_usage.cost(&app.pricing);
+    let balance_str = if app.remaining_balance > 0.0 {
+        format!("¥{:.2}", app.remaining_balance)
+    } else {
+        "查询中…".into()
+    };
     let lines = vec![
         Line::from(Span::styled(
             "── Token 用量 ──",
             Style::default()
                 .fg(theme.accent_dim)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            format!("  余额: {}", balance_str),
+            Style::default()
+                .fg(theme.success_color)
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(format!("  提示: {}", tab.total_usage.prompt_tokens)),
