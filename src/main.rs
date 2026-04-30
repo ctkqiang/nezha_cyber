@@ -119,8 +119,10 @@ fn load_agents() -> Vec<AgentConfig> {
     default_agents()
 }
 
-/// 加载 AppConfig —— 优先从 config.yaml 读取，否则用环境变量
+/// 加载 AppConfig —— .env → config.yaml → 环境变量 → 默认值
 fn load_app_config() -> AppConfig {
+    let _ = dotenvy::dotenv();
+
     let config_path = env::current_dir()
         .map(|p| p.join("config.yaml"))
         .unwrap_or_default();
