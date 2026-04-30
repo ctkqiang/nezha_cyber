@@ -7,6 +7,7 @@ use crate::action::Action;
 use crate::agent::config::{AgentConfig, AppConfig, DefaultPricing};
 use crate::api::deepseek::{DeepSeekClient, DeepSeekConfig};
 use crate::api::types::{ApiMessage, Message, Pricing, Role, ToolCall, Usage};
+use crate::persistence::MemoryStore;
 use std::collections::HashMap;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -77,6 +78,7 @@ pub struct App {
     pub focus: Focus,
     pub agents: Vec<AgentConfig>,
     pub client: DeepSeekClient,
+    pub memory: MemoryStore,
     pub pricing: Pricing,
     pub theme: String,
     pub should_quit: bool,
@@ -97,6 +99,8 @@ impl App {
             model: app_config.default_model.clone(),
         });
 
+        let memory = MemoryStore::open().expect("无法初始化 SQLite 数据库");
+
         let default_model = app_config.default_model;
         let default_agent = agents.first().map(|a| a.name.clone()).unwrap_or_default();
 
@@ -111,6 +115,7 @@ impl App {
             focus: Focus::ChatInput,
             agents,
             client,
+            memory,
             pricing: Pricing {
                 prompt_price_per_m: default_pricing.prompt_price_per_m,
                 completion_price_per_m: default_pricing.completion_price_per_m,
@@ -334,7 +339,7 @@ pub fn update(app: &mut App, action: Action) -> bool {
                     call_type: "function".into(),
                     function: crate::api::types::ToolFunction {
                         name: name.clone(),
-                        arguments: serde_json::to_string(&args).unwrap_or_default(),
+                        arguments: args.clone(),
                     },
                 };
                 if let Some(last_msg) = tab.messages.last_mut() {
@@ -395,6 +400,76 @@ pub fn update(app: &mut App, action: Action) -> bool {
                     if app.agents.iter().any(|a| a.name == agent) {
                         tab.agent_name = agent.clone();
                         app.status_message = format!("Agent: {}", agent);
+                    }
+                }
+            } else if input == "/save" {
+                app.command_palette_open = false;
+                app.command_palette_input.clear();
+                app.focus = Focus::ChatInput;
+                let tab = app.active_tab();
+                let title = tab.title.clone();
+                let agent = tab.agent_name.clone();
+                let model = tab.model.clone();
+                match app.memory.save_conversation(&title, &agent, &model, &tab.messages) {
+                    Ok(id) => {
+                        app.status_message = format!("对话已保存 (ID: {})", id);
+                        let _ = app.memory.trim_old_conversations();
+                    }
+                    Err(e) => app.status_message = format!("保存失败: {}", e),
+                }
+            } else if input == "/history" {
+                app.command_palette_open = false;
+                app.command_palette_input.clear();
+                app.focus = Focus::ChatInput;
+                match app.memory.list_conversations() {
+                    Ok(list) => {
+                        if list.is_empty() {
+                            app.status_message = "记忆库为空".into();
+                        } else {
+                            let mut msg = String::from("── 已保存的对话 ──\n");
+                            for c in &list {
+                                let fav = if c.is_favorited { "⭐" } else { "  " };
+                                msg.push_str(&format!(
+                                    "{} [{}] {} ({} 条消息, {})\n",
+                                    fav, c.id, c.title, c.message_count, c.created_at
+                                ));
+                            }
+                            app.status_message = format!("找到 {} 条对话", list.len());
+                            let sys_msg = Message::system(&msg);
+                            app.active_tab_mut().messages.push(sys_msg);
+                        }
+                    }
+                    Err(e) => app.status_message = format!("查询失败: {}", e),
+                }
+            } else if input.starts_with("/load ") {
+                let id_str = input[6..].trim();
+                if let Ok(id) = id_str.parse::<i64>() {
+                    app.command_palette_open = false;
+                    app.command_palette_input.clear();
+                    app.focus = Focus::ChatInput;
+                    match app.memory.load_conversation(id) {
+                        Ok(messages) => {
+                            let title = format!("会话 {}", app.tabs.len() + 1);
+                            let default_model = app.client.model().to_string();
+                            let default_agent = app
+                                .agents
+                                .first()
+                                .map(|a| a.name.clone())
+                                .unwrap_or_default();
+                            let mut new_tab = Tab::new(
+                                app.tabs.len(),
+                                title,
+                                &default_model,
+                                &default_agent,
+                            );
+                            new_tab.messages = messages;
+                            new_tab.auto_scroll = false;
+                            new_tab.scroll_offset = 0;
+                            app.tabs.push(new_tab);
+                            app.active_tab = app.tabs.len() - 1;
+                            app.status_message = format!("已加载对话 (ID: {})", id);
+                        }
+                        Err(e) => app.status_message = format!("加载失败: {}", e),
                     }
                 }
             } else if input == "/new" {
@@ -494,6 +569,111 @@ pub fn update(app: &mut App, action: Action) -> bool {
                 let name = app.agents[next].name.clone();
                 app.active_tab_mut().agent_name = name.clone();
                 app.status_message = format!("已切换到: {}", name);
+            }
+            true
+        }
+
+        Action::SaveConversation => {
+            let tab = app.active_tab();
+            let title = tab.title.clone();
+            let agent = tab.agent_name.clone();
+            let model = tab.model.clone();
+            match app
+                .memory
+                .save_conversation(&title, &agent, &model, &tab.messages)
+            {
+                Ok(id) => {
+                    app.status_message = format!("对话已保存 (ID: {})", id);
+                    let _ = app.memory.trim_old_conversations();
+                }
+                Err(e) => app.status_message = format!("保存失败: {}", e),
+            }
+            true
+        }
+
+        Action::LoadConversation(id) => {
+            match app.memory.load_conversation(id) {
+                Ok(messages) => {
+                    let title = format!("会话 {}", app.tabs.len() + 1);
+                    let default_model = app.client.model().to_string();
+                    let default_agent = app
+                        .agents
+                        .first()
+                        .map(|a| a.name.clone())
+                        .unwrap_or_default();
+                    let mut new_tab =
+                        Tab::new(app.tabs.len(), title, &default_model, &default_agent);
+                    new_tab.messages = messages;
+                    new_tab.auto_scroll = false;
+                    new_tab.scroll_offset = 0;
+                    app.tabs.push(new_tab);
+                    app.active_tab = app.tabs.len() - 1;
+                    app.status_message = format!("已加载对话 (ID: {})", id);
+                }
+                Err(e) => app.status_message = format!("加载失败: {}", e),
+            }
+            true
+        }
+
+        Action::ListConversations => {
+            match app.memory.list_conversations() {
+                Ok(list) => {
+                    if list.is_empty() {
+                        app.status_message = "记忆库为空".into();
+                    } else {
+                        let mut msg = String::from("── 已保存的对话 ──\n");
+                        for c in &list {
+                            let fav = if c.is_favorited { "⭐" } else { "  " };
+                            msg.push_str(&format!(
+                                "{} [{}] {} ({} 条消息, {})\n",
+                                fav, c.id, c.title, c.message_count, c.created_at
+                            ));
+                        }
+                        app.status_message = format!("找到 {} 条对话", list.len());
+                        let tab = app.active_tab_mut();
+                        let sys_msg = Message::system(&msg);
+                        tab.messages.push(sys_msg);
+                    }
+                }
+                Err(e) => app.status_message = format!("查询失败: {}", e),
+            }
+            true
+        }
+
+        Action::DeleteConversation(id) => {
+            match app.memory.delete_conversation(id) {
+                Ok(()) => app.status_message = format!("已删除对话 (ID: {})", id),
+                Err(e) => app.status_message = format!("删除失败: {}", e),
+            }
+            true
+        }
+
+        Action::ToggleFavorite(id) => {
+            match app.memory.toggle_favorite(id) {
+                Ok(fav) => {
+                    let label = if fav { "已收藏" } else { "已取消收藏" };
+                    app.status_message = format!("{} (ID: {})", label, id);
+                }
+                Err(e) => app.status_message = format!("操作失败: {}", e),
+            }
+            true
+        }
+
+        Action::LoadConversationToTab {
+            tab_id,
+            conversation_id,
+        } => {
+            match app.memory.load_conversation(conversation_id) {
+                Ok(messages) => {
+                    if let Some(tab) = app.tabs.get_mut(tab_id) {
+                        tab.messages = messages;
+                        tab.auto_scroll = false;
+                        tab.scroll_offset = 0;
+                        app.status_message =
+                            format!("对话已加载到 Tab {} (ID: {})", tab_id + 1, conversation_id);
+                    }
+                }
+                Err(e) => app.status_message = format!("加载失败: {}", e),
             }
             true
         }
@@ -869,7 +1049,7 @@ mod tests {
                 tab_id: 0,
                 call_id: "call_001".into(),
                 name: "run_nmap".into(),
-                args: serde_json::json!({"target": "192.168.1.1"}),
+                args: r#"{"target": "192.168.1.1"}"#.into(),
             },
         );
         assert!(app.tabs[0].pending_tool_calls.contains_key("call_001"));
@@ -908,7 +1088,7 @@ mod tests {
             tab_id: 0,
             call_id: "call_003".into(),
             name: "test_tool".into(),
-            args: serde_json::json!({}),
+            args: r#"{}"#.into(),
         };
         app.tabs[0]
             .pending_tool_calls

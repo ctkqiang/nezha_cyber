@@ -280,14 +280,11 @@ fn apply_tool_call_delta(
     }
 
     if !entry.name.is_empty() && !entry.id.is_empty() && !entry.arguments.is_empty() {
-        let args_value: serde_json::Value =
-            serde_json::from_str(&entry.arguments).unwrap_or(serde_json::Value::Null);
-
         let _ = tx.send(Action::ToolCallRequest {
             tab_id,
             call_id: entry.id.clone(),
             name: entry.name.clone(),
-            args: args_value,
+            args: entry.arguments.clone(),
         });
     }
 }

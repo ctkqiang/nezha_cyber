@@ -13,7 +13,7 @@ pub struct ToolCallConfirmation {
     pub tab_id: usize,
     pub call_id: String,
     pub name: String,
-    pub args: serde_json::Value,
+    pub args: String,
 }
 
 /// 全局事件枚举 —— 所有状态变更的源头
@@ -63,7 +63,7 @@ pub enum Action {
         tab_id: usize,
         call_id: String,
         name: String,
-        args: serde_json::Value,
+        args: String,
     },
     ToolCallResponse {
         tab_id: usize,
@@ -92,4 +92,15 @@ pub enum Action {
     },
     SwitchAgentByIndex(usize),
     SwitchAgentNext,
+
+    // ---- 记忆管理 ----
+    SaveConversation,
+    LoadConversation(i64),
+    ListConversations,
+    DeleteConversation(i64),
+    ToggleFavorite(i64),
+    LoadConversationToTab {
+        tab_id: usize,
+        conversation_id: i64,
+    },
 }

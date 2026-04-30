@@ -293,6 +293,23 @@ fn main() -> anyhow::Result<()> {
             terminal.draw(|frame| nezha_cyber::ui::render::render(frame, &app))?;
 
             if app.should_quit {
+                let auto_save = app
+                    .memory
+                    .get_preference("auto_save")
+                    .unwrap_or(None)
+                    .unwrap_or_else(|| "on_exit".into());
+                if auto_save == "on_exit" || auto_save == "always" {
+                    let tab = app.active_tab();
+                    if !tab.messages.is_empty() {
+                        let _ = app.memory.save_conversation(
+                            &tab.title,
+                            &tab.agent_name,
+                            &tab.model,
+                            &tab.messages,
+                        );
+                    }
+                    let _ = app.memory.trim_old_conversations();
+                }
                 break Ok::<_, anyhow::Error>(());
             }
 

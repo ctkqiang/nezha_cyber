@@ -5,7 +5,7 @@
 use nezha_cyber::action::Action;
 use nezha_cyber::agent::config::{AgentConfig, AppConfig, DefaultPricing};
 use nezha_cyber::api::types::{Role, Usage};
-use nezha_cyber::app::{App, Focus, ToolCallStatus, update};
+use nezha_cyber::app::{update, App, Focus, ToolCallStatus};
 use uuid::Uuid;
 
 fn test_app_config() -> AppConfig {
@@ -158,7 +158,7 @@ fn tool_call_integration_flow() {
             tab_id: 0,
             call_id: "call_nmap".into(),
             name: "run_nmap".into(),
-            args: serde_json::json!({"target": "192.168.1.1", "ports": "1-1000"}),
+            args: r#"{"target": "192.168.1.1", "ports": "1-1000"}"#.into(),
         },
     );
 
@@ -202,7 +202,7 @@ fn confirm_tool_call_integration() {
             tab_id: 0,
             call_id: "call_risky".into(),
             name: "run_exploit".into(),
-            args: serde_json::json!({"target": "10.0.0.1"}),
+            args: r#"{"target": "10.0.0.1"}"#.into(),
         },
     );
 
@@ -210,7 +210,7 @@ fn confirm_tool_call_integration() {
         tab_id: 0,
         call_id: "call_risky".into(),
         name: "run_exploit".into(),
-        args: serde_json::json!({"target": "10.0.0.1"}),
+        args: r#"{"target": "10.0.0.1"}"#.into(),
     };
     update(&mut app, Action::ConfirmToolCall(confirmation));
 
