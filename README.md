@@ -29,13 +29,7 @@
 
 ## 项目概述
 
-哪吒网络安全是一款高性能终端 UI (TUI) 应用，专为红队演练、渗透测试和漏洞研究打造。默认 AI 角色「哪吒」来自电影《哪吒之魔童降世》——魔丸转世、叛逆正义、嘴毒心软——以少年语气与你对话。
-
-**核心设计哲学**：Elm Architecture (Model-Update-View) 模式，纯函数状态转换，`tokio::sync::mpsc` 通道传递事件，零成本抽象的 Rust 惯用模式。
-
-**作者**：钟智强
-**仓库**：https://gitcode.com/ctkqiang_sr/nezha_cyber
-**语言**：Rust (2021 edition) | **许可证**：MIT | **测试**：107 passed
+![demo](./docs/demo.png)
 
 ---
 
@@ -50,7 +44,7 @@
 ### 实时流式对话
 
 - SSE 流式通信，逐 Token 渲染
-- AI 思考中动画指示器（"[哪吒] 正在思考..."）
+- AI 思考中动画指示器（"\[哪吒] 正在思考..."）
 - 自动滚动到底部，手动上滚查看历史时不自动滚动
 
 ### 文件工具与项目创建（Claude Code 风格）
@@ -109,18 +103,18 @@ Action (mpsc 通道)  ──►  update()  ──►  修改 App 状态
 
 ## 依赖栈
 
-| 依赖 | 版本 | 用途 |
-|------|------|------|
-| `ratatui` | 0.29 | 终端 UI 框架 |
-| `crossterm` | 0.28 | 终端控制 |
-| `tokio` | 1 | 异步运行时 |
-| `reqwest` | 0.12 | HTTP + SSE 流 |
-| `rusqlite` | 0.31 (bundled) | 对话持久化 |
-| `serde` + `serde_json` + `serde_yaml` | 1 / 1 / 0.9 | 序列化 |
-| `uuid` | 1 | 消息唯一标识 |
-| `chrono` | 0.4 | 时间戳 |
-| `unicode-width` | 0.2 | 中日韩字符宽度 |
-| `dotenvy` | 0.15 | .env 文件加载 |
+| 依赖                                  | 版本           | 用途           |
+| ------------------------------------- | -------------- | -------------- |
+| `ratatui`                             | 0.29           | 终端 UI 框架   |
+| `crossterm`                           | 0.28           | 终端控制       |
+| `tokio`                               | 1              | 异步运行时     |
+| `reqwest`                             | 0.12           | HTTP + SSE 流  |
+| `rusqlite`                            | 0.31 (bundled) | 对话持久化     |
+| `serde` + `serde_json` + `serde_yaml` | 1 / 1 / 0.9    | 序列化         |
+| `uuid`                                | 1              | 消息唯一标识   |
+| `chrono`                              | 0.4            | 时间戳         |
+| `unicode-width`                       | 0.2            | 中日韩字符宽度 |
+| `dotenvy`                             | 0.15           | .env 文件加载  |
 
 总计 14 个直接依赖，编译为单一二进制文件。
 
@@ -131,7 +125,7 @@ Action (mpsc 通道)  ──►  update()  ──►  修改 App 状态
 ### 前置条件
 
 - Rust toolchain（stable，2021 edition+）：`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-- DeepSeek API Token（https://platform.deepseek.com）
+- DeepSeek API Token（<https://platform.deepseek.com）>
 
 ### 从源码构建
 
@@ -155,11 +149,11 @@ cargo install --git https://gitcode.com/ctkqiang_sr/nezha_cyber.git
 
 ### 三种方式设置 API Key
 
-| 方式 | 说明 |
-|------|------|
-| `.env` 文件 | 项目根目录创建 `.env` → `DEEPSEEK_TOKEN=sk-xxx` |
-| `export` | `export DEEPSEEK_TOKEN=sk-xxx && nezha_cyber` |
-| `config.yaml` | YAML 配置文件中的 `api_key` 字段 |
+| 方式          | 说明                                            |
+| ------------- | ----------------------------------------------- |
+| `.env` 文件   | 项目根目录创建 `.env` → `DEEPSEEK_TOKEN=sk-xxx` |
+| `export`      | `export DEEPSEEK_TOKEN=sk-xxx && nezha_cyber`   |
+| `config.yaml` | YAML 配置文件中的 `api_key` 字段                |
 
 优先级：`.env` → `config.yaml` → 环境变量。同时支持旧版 `DEEPSEEK_API_KEY`。
 
@@ -197,10 +191,10 @@ agents:
 
 ### Agent 切换
 
-| 方式 | 操作 |
-|------|------|
-| 快捷键 | `Ctrl+1` `Ctrl+2` `Ctrl+3` 或 `Ctrl+Tab` 循环 |
-| 命令面板 | `Ctrl+K` → `/agent 哪吒` |
+| 方式     | 操作                                          |
+| -------- | --------------------------------------------- |
+| 快捷键   | `Ctrl+1` `Ctrl+2` `Ctrl+3` 或 `Ctrl+Tab` 循环 |
+| 命令面板 | `Ctrl+K` → `/agent 哪吒`                      |
 
 ### 文件工具工作流
 
@@ -215,11 +209,11 @@ agents:
 
 ### 对话记忆
 
-| 命令 | 功能 |
-|------|------|
-| `/save` | 保存当前对话 |
-| `/load <id>` | 加载历史对话 |
-| `/history` | 列出所有已保存对话 |
+| 命令         | 功能               |
+| ------------ | ------------------ |
+| `/save`      | 保存当前对话       |
+| `/load <id>` | 加载历史对话       |
+| `/history`   | 列出所有已保存对话 |
 
 ---
 
@@ -253,32 +247,32 @@ APT 攻击分析、恶意软件行为、攻击链追踪、IOC 提取。
 
 ### 全局
 
-| 快捷键 | 功能 |
-|--------|------|
-| `Ctrl+C` | 退出 |
-| `Ctrl+N` | 新建标签页 |
-| `Ctrl+K` | 命令面板 |
-| `Ctrl+B` | 折叠侧边栏 |
-| `Ctrl+1/2/3` | 切换 Agent |
-| `Ctrl+Tab` | 下一个 Agent |
-| `Esc` | 关闭面板/拒绝工具调用 |
+| 快捷键       | 功能                  |
+| ------------ | --------------------- |
+| `Ctrl+C`     | 退出                  |
+| `Ctrl+N`     | 新建标签页            |
+| `Ctrl+K`     | 命令面板              |
+| `Ctrl+B`     | 折叠侧边栏            |
+| `Ctrl+1/2/3` | 切换 Agent            |
+| `Ctrl+Tab`   | 下一个 Agent          |
+| `Esc`        | 关闭面板/拒绝工具调用 |
 
 ### 输入区
 
-| 快捷键 | 功能 |
-|--------|------|
-| `Enter` | 发送消息 |
-| `Backspace` | 删除字符 |
-| `Up/Down` | 滚动消息 |
+| 快捷键      | 功能      |
+| ----------- | --------- |
+| `Enter`     | 发送消息  |
+| `Backspace` | 删除字符  |
+| `Up/Down`   | 滚动消息  |
 | `PgUp/PgDn` | 滚动 5 行 |
 
 ### 工具调用确认
 
-| 按键 | 操作 |
-|------|------|
-| `Y` | 确认执行（写文件/读文件/建目录） |
-| `N` | 拒绝 |
-| `Esc` | 忽略（同拒绝） |
+| 按键  | 操作                             |
+| ----- | -------------------------------- |
+| `Y`   | 确认执行（写文件/读文件/建目录） |
+| `N`   | 拒绝                             |
+| `Esc` | 忽略（同拒绝）                   |
 
 ---
 
