@@ -73,6 +73,10 @@ impl DeepSeekClient {
 
     /// 查询账户余额
     pub async fn check_balance(&self) -> Result<BalanceInfo, String> {
+        if self.config.api_key.is_empty() {
+            return Err("未设置 API Key，请设置 DEEPSEEK_TOKEN 环境变量或 .env 文件".into());
+        }
+
         let url = format!("{}/user/balance", self.config.api_base);
 
         let response = self
