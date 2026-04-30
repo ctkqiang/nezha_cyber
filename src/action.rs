@@ -90,4 +90,6 @@ pub enum Action {
         tab_id: usize,
         agent_name: String,
     },
+    SwitchAgentByIndex(usize),
+    SwitchAgentNext,
 }

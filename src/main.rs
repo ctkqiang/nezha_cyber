@@ -139,6 +139,10 @@ fn key_event_to_action(key: &crossterm::event::KeyEvent) -> Option<Action> {
         (KeyCode::Char('n'), KeyModifiers::CONTROL) => Some(Action::NewTab),
         (KeyCode::Char('k'), KeyModifiers::CONTROL) => Some(Action::OpenCommandPalette),
         (KeyCode::Char('b'), KeyModifiers::CONTROL) => Some(Action::ToggleSidebar),
+        (KeyCode::Tab, KeyModifiers::CONTROL) => Some(Action::SwitchAgentNext),
+        (KeyCode::Char('1'), KeyModifiers::CONTROL) => Some(Action::SwitchAgentByIndex(0)),
+        (KeyCode::Char('2'), KeyModifiers::CONTROL) => Some(Action::SwitchAgentByIndex(1)),
+        (KeyCode::Char('3'), KeyModifiers::CONTROL) => Some(Action::SwitchAgentByIndex(2)),
         _ => None,
     }
 }
