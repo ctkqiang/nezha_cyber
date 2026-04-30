@@ -178,7 +178,14 @@ pub fn update(app: &mut App, action: Action) -> bool {
 
         Action::Tick => {
             let tab = app.active_tab_mut();
-            tab.thinking_ticks = tab.thinking_ticks.wrapping_add(1);
+            let is_thinking = tab
+                .messages
+                .last()
+                .map(|m| m.role == Role::Assistant && m.content.is_empty())
+                .unwrap_or(false);
+            if is_thinking {
+                tab.thinking_ticks = tab.thinking_ticks.wrapping_add(1);
+            }
             false
         }
 

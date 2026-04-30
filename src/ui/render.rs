@@ -2,6 +2,9 @@
 //!
 //! 包含侧边栏、Tab 栏、消息列表、输入框、状态栏、命令面板的绘制函数。
 //! 所有渲染函数为纯函数，接收 Frame 和 App 引用，不修改状态。
+//!
+//! 消息滚动策略：手动 wrap_text 换行 → 按行数算出 visible_lines 分片 →
+//! 只渲染可见行。不使用 Paragraph::scroll()，避免 wrap 后偏移错位。
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -16,13 +19,10 @@ use super::layout::{calculate, AppLayout};
 use super::theme::Theme;
 use crate::app::{App, Focus, ToolCallStatus};
 
-/// 顶层渲染入口 —— 计算布局并分发到各子渲染函数
 pub fn render(frame: &mut Frame, app: &App) {
     let area = frame.area();
     let layout = calculate(area, app.sidebar_visible, app.command_palette_open, 25);
     let theme = super::theme::get_theme(&app.theme);
-
-    frame.render_widget(Block::default().style(Style::default().bg(theme.bg)), area);
 
     if let Some(sidebar) = layout.sidebar {
         render_sidebar(frame, app, sidebar, &theme);
@@ -31,7 +31,6 @@ pub fn render(frame: &mut Frame, app: &App) {
     render_command_palette(frame, app, &layout, &theme);
 }
 
-/// 绘制侧边栏：标题 + Token 用量 + Agent 列表
 fn render_sidebar(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let block = Block::default().style(Style::default().bg(theme.sidebar_bg));
     let inner = block.inner(area);
@@ -69,7 +68,6 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     render_sidebar_agents(frame, app, chunks[2], theme);
 }
 
-/// 侧边栏 Token 用量区域
 fn render_sidebar_usage(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let tab = app.active_tab();
     let total_cost = tab.total_usage.cost(&app.pricing);
@@ -95,7 +93,6 @@ fn render_sidebar_usage(frame: &mut Frame, app: &App, area: Rect, theme: &Theme)
     );
 }
 
-/// 侧边栏 Agent 列表
 fn render_sidebar_agents(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let mut lines: Vec<Line> = vec![Line::from(Span::styled(
         "── Agent 列表 ──",
@@ -134,7 +131,6 @@ fn render_sidebar_agents(frame: &mut Frame, app: &App, area: Rect, theme: &Theme
     );
 }
 
-/// 绘制主区域：Tab 栏 + 消息列表 + 输入框 + 状态栏
 fn render_main_area(frame: &mut Frame, app: &App, layout: &AppLayout, theme: &Theme) {
     render_tab_bar(frame, app, layout.tab_bar, theme);
     render_messages(frame, app, layout.messages, theme);
@@ -142,7 +138,6 @@ fn render_main_area(frame: &mut Frame, app: &App, layout: &AppLayout, theme: &Th
     render_status_bar(frame, app, layout.status_bar, theme);
 }
 
-/// Tab 栏
 fn render_tab_bar(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let mut spans: Vec<Span> = Vec::new();
     for (i, tab) in app.tabs.iter().enumerate() {
@@ -163,36 +158,40 @@ fn render_tab_bar(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
 
     let line = Line::from(spans);
     frame.render_widget(
-        Paragraph::new(Text::from(line)).style(Style::default().bg(theme.tab_inactive_bg)),
+        Paragraph::new(Text::from(line))
+            .style(Style::default().bg(theme.bg))
+            .block(Block::default().style(Style::default().bg(theme.bg))),
         area,
     );
 }
 
-/// 消息列表区域 —— 着色行 + 手动宽度换行，精确控制滚动
+/// 消息列表：构建全部行 → 按 scroll 分片 → 只渲染 visible_lines
 fn render_messages(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let tab = app.active_tab();
     let max_width = area.width.saturating_sub(2) as usize;
-    let mut lines: Vec<Line> = Vec::new();
+    let visible = area.height as usize;
+    let mut all_lines: Vec<Line> = Vec::new();
 
     for (idx, msg) in tab.messages.iter().enumerate() {
         let is_last = idx == tab.messages.len() - 1;
-        let is_empty_assistant =
-            is_last && msg.role == crate::api::types::Role::Assistant && msg.content.is_empty();
+        let is_thinking = is_last
+            && msg.role == crate::api::types::Role::Assistant
+            && msg.content.is_empty();
 
-        if is_empty_assistant {
+        if is_thinking {
             let dots = match tab.thinking_ticks % 4 {
                 0 => "",
                 1 => ".",
                 2 => "..",
                 _ => "...",
             };
-            lines.push(Line::from(Span::styled(
+            all_lines.push(Line::from(Span::styled(
                 format!("[哪吒] 正在思考{}", dots),
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::ITALIC),
             )));
-            lines.push(Line::from(""));
+            all_lines.push(Line::from(""));
             continue;
         }
 
@@ -203,18 +202,17 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
             crate::api::types::Role::Tool => ("[工具]", theme.success_color),
         };
 
-        lines.push(Line::from(Span::styled(
+        all_lines.push(Line::from(Span::styled(
             role_label,
             Style::default().fg(color).add_modifier(Modifier::BOLD),
         )));
 
         if !msg.content.is_empty() {
             for raw_line in msg.content.lines() {
-                let indent = "  ";
-                let wrapped = wrap_text(raw_line, max_width, indent);
-                for wrapped_line in wrapped {
-                    lines.push(Line::from(Span::styled(
-                        wrapped_line,
+                let wrapped = wrap_text(raw_line, max_width, "  ");
+                for wl in wrapped {
+                    all_lines.push(Line::from(Span::styled(
+                        wl,
                         Style::default().fg(theme.fg),
                     )));
                 }
@@ -235,7 +233,7 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
                 );
                 let wrapped = wrap_text(&tc_line, max_width, "    ");
                 for wl in wrapped {
-                    lines.push(Line::from(Span::styled(
+                    all_lines.push(Line::from(Span::styled(
                         wl,
                         Style::default().fg(theme.warning_color),
                     )));
@@ -243,26 +241,25 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
             }
         }
 
-        lines.push(Line::from(""));
+        all_lines.push(Line::from(""));
     }
 
-    let total_lines = lines.len();
-    let visible = area.height as usize;
-    let max_offset = total_lines.saturating_sub(visible);
-    let mut scroll = tab.scroll_offset.min(max_offset);
+    let total = all_lines.len();
+    let max_offset = total.saturating_sub(visible);
+    let scroll = if tab.auto_scroll && total > visible {
+        max_offset
+    } else {
+        tab.scroll_offset.min(max_offset)
+    };
 
-    if tab.auto_scroll && total_lines > visible {
-        scroll = max_offset;
-    }
+    let visible_lines: Vec<Line> = all_lines.into_iter().skip(scroll).take(visible).collect();
 
-    let para = Paragraph::new(Text::from(lines))
-        .block(Block::default().style(Style::default().bg(theme.bg)))
-        .scroll((scroll as u16, 0));
+    let para = Paragraph::new(Text::from(visible_lines))
+        .block(Block::default().style(Style::default().bg(theme.bg)));
 
     frame.render_widget(para, area);
 }
 
-/// 输入区域
 fn render_input_area(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let is_focused = app.focus == Focus::ChatInput;
     let border_style = if is_focused {
@@ -282,10 +279,14 @@ fn render_input_area(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
         .style(Style::default().bg(theme.input_bg));
 
     let input_text = &app.active_tab().input_buffer;
-    frame.render_widget(Paragraph::new(input_text.as_str()).block(input_block), area);
+    frame.render_widget(
+        Paragraph::new(input_text.as_str())
+            .block(input_block)
+            .style(Style::default().bg(theme.input_bg)),
+        area,
+    );
 }
 
-/// 状态栏
 fn render_status_bar(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let left = Span::styled(
         format!(" {} ", app.status_message),
@@ -325,12 +326,12 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
 
     frame.render_widget(
         Paragraph::new(Text::from(line))
-            .style(Style::default().bg(theme.tab_inactive_bg).fg(theme.fg)),
+            .style(Style::default().bg(theme.tab_inactive_bg).fg(theme.fg))
+            .block(Block::default().style(Style::default().bg(theme.bg))),
         area,
     );
 }
 
-/// 命令面板（Ctrl+K）
 fn render_command_palette(frame: &mut Frame, app: &App, layout: &AppLayout, theme: &Theme) {
     let Some(palette_area) = layout.command_palette else {
         return;
@@ -359,9 +360,6 @@ fn render_command_palette(frame: &mut Frame, app: &App, layout: &AppLayout, them
         ("/history", "列出已保存的对话"),
         ("/new", "新建标签页"),
         ("/close", "关闭当前标签页"),
-        ("/compact", "压缩上下文"),
-        ("/fork", "复制当前会话"),
-        ("/export", "导出对话"),
         ("Ctrl+N", "新建标签页 (快捷键)"),
         ("Ctrl+B", "折叠侧边栏 (快捷键)"),
         ("Ctrl+K", "切换命令面板 (快捷键)"),
@@ -387,12 +385,12 @@ fn render_command_palette(frame: &mut Frame, app: &App, layout: &AppLayout, them
         .borders(Borders::ALL)
         .border_type(BorderType::Plain)
         .border_style(Style::default().fg(theme.accent))
-        .title(Span::styled(
-            " 输入命令 ",
-            Style::default().fg(theme.accent),
-        ));
+        .title(Span::styled(" 输入命令 ", Style::default().fg(theme.accent)));
     let input_text = format!("> {}", app.command_palette_input);
-    frame.render_widget(Paragraph::new(input_text).block(input_block), chunks[0]);
+    frame.render_widget(
+        Paragraph::new(input_text).block(input_block),
+        chunks[0],
+    );
 
     let cmd_lines: Vec<Line> = filtered
         .iter()
@@ -427,7 +425,7 @@ fn render_command_palette(frame: &mut Frame, app: &App, layout: &AppLayout, them
 
 /// 按终端宽度手动换行，保持缩进
 fn wrap_text(text: &str, max_width: usize, indent: &str) -> Vec<String> {
-    if max_width == 0 {
+    if max_width == 0 || text.is_empty() {
         return vec![text.to_string()];
     }
     let mut result = Vec::new();
