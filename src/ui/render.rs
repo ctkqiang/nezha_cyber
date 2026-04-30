@@ -22,6 +22,8 @@ pub fn render(frame: &mut Frame, app: &App) {
     let layout = calculate(area, app.sidebar_visible, app.command_palette_open, 25);
     let theme = super::theme::get_theme(&app.theme);
 
+    frame.render_widget(Block::default().style(Style::default().bg(theme.bg)), area);
+
     if let Some(sidebar) = layout.sidebar {
         render_sidebar(frame, app, sidebar, &theme);
     }
@@ -31,6 +33,10 @@ pub fn render(frame: &mut Frame, app: &App) {
 
 /// 绘制侧边栏：标题 + Token 用量 + Agent 列表
 fn render_sidebar(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
+    let block = Block::default().style(Style::default().bg(theme.sidebar_bg));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -38,7 +44,7 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
             Constraint::Length(7),
             Constraint::Min(0),
         ])
-        .split(area);
+        .split(inner);
 
     let header_block = Block::default()
         .borders(Borders::BOTTOM)
@@ -82,7 +88,11 @@ fn render_sidebar_usage(frame: &mut Frame, app: &App, area: Rect, theme: &Theme)
             Style::default().fg(theme.warning_color),
         )),
     ];
-    frame.render_widget(Paragraph::new(Text::from(lines)), area);
+    frame.render_widget(
+        Paragraph::new(Text::from(lines))
+            .block(Block::default().style(Style::default().bg(theme.sidebar_bg))),
+        area,
+    );
 }
 
 /// 侧边栏 Agent 列表
@@ -117,7 +127,11 @@ fn render_sidebar_agents(frame: &mut Frame, app: &App, area: Rect, theme: &Theme
         " Ctrl+1/2/3 切换",
         Style::default().fg(theme.accent_dim),
     )));
-    frame.render_widget(Paragraph::new(Text::from(lines)), area);
+    frame.render_widget(
+        Paragraph::new(Text::from(lines))
+            .block(Block::default().style(Style::default().bg(theme.sidebar_bg))),
+        area,
+    );
 }
 
 /// 绘制主区域：Tab 栏 + 消息列表 + 输入框 + 状态栏
