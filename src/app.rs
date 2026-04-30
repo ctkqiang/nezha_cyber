@@ -389,6 +389,14 @@ pub fn update(app: &mut App, action: Action) -> bool {
             } else if input.starts_with("/theme ") {
                 let theme = input[7..].trim().to_string();
                 app.theme = theme;
+            } else if input.starts_with("/agent ") {
+                let agent = input[7..].trim().to_string();
+                if let Some(tab) = app.tabs.get_mut(app.active_tab) {
+                    if app.agents.iter().any(|a| a.name == agent) {
+                        tab.agent_name = agent.clone();
+                        app.status_message = format!("Agent: {}", agent);
+                    }
+                }
             } else if input == "/new" {
                 let id = app.tabs.len();
                 let default_model = app.client.model().to_string();
@@ -453,6 +461,16 @@ pub fn update(app: &mut App, action: Action) -> bool {
                 tab.model = model.clone();
             }
             app.client.set_model(model);
+            true
+        }
+
+        Action::SwitchAgent { tab_id, agent_name } => {
+            if let Some(tab) = app.tabs.get_mut(tab_id) {
+                if app.agents.iter().any(|a| a.name == agent_name) {
+                    tab.agent_name = agent_name.clone();
+                    app.status_message = format!("已切换到: {}", agent_name);
+                }
+            }
             true
         }
     }

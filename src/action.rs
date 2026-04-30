@@ -86,4 +86,8 @@ pub enum Action {
         tab_id: usize,
         model: String,
     },
+    SwitchAgent {
+        tab_id: usize,
+        agent_name: String,
+    },
 }

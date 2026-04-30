@@ -110,13 +110,14 @@ fn render_sidebar_agents(frame: &mut Frame, app: &App, area: Rect, theme: &Theme
             .fg(theme.accent_dim)
             .add_modifier(Modifier::BOLD),
     ))];
-    for agent in &app.agents {
-        let prefix = if agent.name == app.active_tab().agent_name {
-            " ▶ "
+    for (i, agent) in app.agents.iter().enumerate() {
+        let is_active = agent.name == app.active_tab().agent_name;
+        let prefix: String = if is_active {
+            "▶".into()
         } else {
-            "   "
+            format!("{}", i + 1)
         };
-        let style = if agent.name == app.active_tab().agent_name {
+        let style = if is_active {
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD)
@@ -124,10 +125,15 @@ fn render_sidebar_agents(frame: &mut Frame, app: &App, area: Rect, theme: &Theme
             Style::default().fg(theme.sidebar_fg)
         };
         lines.push(Line::from(Span::styled(
-            format!("{}{}", prefix, agent.name),
+            format!("  {} {}", prefix, agent.name),
             style,
         )));
     }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        " 按 1/2/3 切换",
+        Style::default().fg(theme.accent_dim),
+    )));
     frame.render_widget(Paragraph::new(Text::from(lines)), area);
 }
 
@@ -345,6 +351,7 @@ fn render_command_palette(frame: &mut Frame, app: &App, layout: &AppLayout, them
     let all_commands = vec![
         ("/model", "切换模型  —  /model deepseek-v4-pro"),
         ("/theme", "切换主题  —  /theme daylight"),
+        ("/agent", "切换智能体  —  /agent 哪吒"),
         ("/new", "新建标签页"),
         ("/close", "关闭当前标签页"),
         ("/compact", "压缩上下文"),
@@ -353,6 +360,7 @@ fn render_command_palette(frame: &mut Frame, app: &App, layout: &AppLayout, them
         ("Ctrl+N", "新建标签页 (快捷键)"),
         ("Ctrl+B", "折叠侧边栏 (快捷键)"),
         ("Ctrl+K", "切换命令面板 (快捷键)"),
+        ("按 1/2/3", "侧边栏切换 Agent (快捷键)"),
     ];
 
     let filter = app.command_palette_input.to_lowercase();
