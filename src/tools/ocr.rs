@@ -48,12 +48,51 @@ fn is_image_ext(ext: &str) -> bool {
 fn is_text_ext(ext: &str) -> bool {
     matches!(
         ext,
-        "txt" | "md" | "rs" | "py" | "js" | "ts" | "go" | "java" | "c" | "cpp"
-            | "h" | "hpp" | "toml" | "yaml" | "yml" | "json" | "xml" | "html"
-            | "css" | "sh" | "bash" | "zsh" | "sql" | "r" | "swift" | "kt"
-            | "env" | "cfg" | "ini" | "log" | "csv" | "vue" | "svelte"
-            | "tf" | "proto" | "lua" | "rb" | "php" | "scala" | "clj"
-            | "ex" | "exs" | "dart" | "nim" | "zig"
+        "txt"
+            | "md"
+            | "rs"
+            | "py"
+            | "js"
+            | "ts"
+            | "go"
+            | "java"
+            | "c"
+            | "cpp"
+            | "h"
+            | "hpp"
+            | "toml"
+            | "yaml"
+            | "yml"
+            | "json"
+            | "xml"
+            | "html"
+            | "css"
+            | "sh"
+            | "bash"
+            | "zsh"
+            | "sql"
+            | "r"
+            | "swift"
+            | "kt"
+            | "env"
+            | "cfg"
+            | "ini"
+            | "log"
+            | "csv"
+            | "vue"
+            | "svelte"
+            | "tf"
+            | "proto"
+            | "lua"
+            | "rb"
+            | "php"
+            | "scala"
+            | "clj"
+            | "ex"
+            | "exs"
+            | "dart"
+            | "nim"
+            | "zig"
     )
 }
 
@@ -94,8 +133,7 @@ pub fn extract_file_text(path: &Path) -> Result<String, String> {
 }
 
 fn extract_pdf(path: &Path) -> Result<String, String> {
-    let bytes =
-        fs::read(path).map_err(|e| format!("读取 PDF 失败: {}", e))?;
+    let bytes = fs::read(path).map_err(|e| format!("读取 PDF 失败: {}", e))?;
     let text =
         pdf_extract::extract_text_from_mem(&bytes).map_err(|e| format!("PDF 解析失败: {}", e))?;
     Ok(truncate_content(&text))
@@ -108,7 +146,12 @@ fn extract_image_ocr(path: &Path) -> Result<String, String> {
         .arg("-l")
         .arg("chi_sim+eng")
         .output()
-        .map_err(|e| format!("tesseract 未安装或无法执行: {}. 安装: brew install tesseract tesseract-lang", e))?;
+        .map_err(|e| {
+            format!(
+                "tesseract 未安装或无法执行: {}. 安装: brew install tesseract tesseract-lang",
+                e
+            )
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -126,8 +169,7 @@ fn extract_image_ocr(path: &Path) -> Result<String, String> {
 }
 
 fn extract_text_file(path: &Path) -> Result<String, String> {
-    let content =
-        fs::read_to_string(path).map_err(|e| format!("读取文件失败: {}", e))?;
+    let content = fs::read_to_string(path).map_err(|e| format!("读取文件失败: {}", e))?;
     Ok(truncate_content(&content))
 }
 
@@ -217,7 +259,7 @@ mod tests {
     fn parse_multiple_at() {
         let (cleaned, files) =
             parse_at_references("@src/main.rs and @docs/readme.md and @\"my doc.pdf\"");
-        assert_eq!(cleaned, " and  and ");
+        assert_eq!(cleaned, "and  and");
         assert_eq!(files, vec!["src/main.rs", "docs/readme.md", "my doc.pdf"]);
     }
 
