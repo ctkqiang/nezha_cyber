@@ -10,5 +10,7 @@ pub mod executor;
 pub mod ocr;
 pub use executor::execute_tool;
 pub use executor::tool_definitions;
+pub use ocr::detect_at_cursor;
 pub use ocr::extract_file_text;
 pub use ocr::parse_at_references;
+pub use ocr::scan_files_for_autocomplete;

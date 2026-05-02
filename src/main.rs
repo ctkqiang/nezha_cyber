@@ -17,7 +17,10 @@ use crossterm::{
 use nezha_cyber::action::Action;
 use nezha_cyber::agent::config::{AgentConfig, AgentsConfig, AppConfig};
 use nezha_cyber::app::{update as app_update, App};
-use nezha_cyber::tools::{extract_file_text, parse_at_references, tool_definitions};
+use nezha_cyber::tools::{
+    detect_at_cursor, extract_file_text, parse_at_references, scan_files_for_autocomplete,
+    tool_definitions,
+};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use tokio::sync::mpsc;
@@ -226,19 +229,51 @@ fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> Option<Action>
             }
             Some(Action::SubmitMessage(final_input))
         }
+        (KeyCode::Tab, _) => {
+            let input = app.active_tab().input_buffer.clone();
+            if let Some((prefix, quoted)) = detect_at_cursor(&input) {
+                let matches = scan_files_for_autocomplete(&prefix);
+                if matches.len() == 1 {
+                    let completion = &matches[0];
+                    let at_pos = input.rfind('@').unwrap();
+                    let new_input = if quoted {
+                        format!("{}@\"{}\"", &input[..at_pos], completion)
+                    } else {
+                        format!("{}@{}", &input[..at_pos], completion)
+                    };
+                    app.active_tab_mut().input_buffer = new_input;
+                } else if matches.len() > 1 {
+                    let list = matches
+                        .iter()
+                        .take(8)
+                        .map(|m| m.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    app.status_message = format!("匹配: {}", list);
+                }
+            }
+            None
+        }
         (KeyCode::Char(c), m) if m == KeyModifiers::NONE || m == KeyModifiers::SHIFT => {
             app.active_tab_mut().input_buffer.push(c);
+            update_at_status(app);
             None
         }
         (KeyCode::Backspace, _) => {
             app.active_tab_mut().input_buffer.pop();
+            update_at_status(app);
             None
         }
         (KeyCode::Char(' '), _) => {
             app.active_tab_mut().input_buffer.push(' ');
             None
         }
-        (KeyCode::Esc, _) => None,
+        (KeyCode::Esc, _) => {
+            if app.status_message.starts_with('@') || app.status_message.starts_with("匹配:") {
+                app.status_message = String::new();
+            }
+            None
+        }
         (KeyCode::Up, _) => Some(Action::ScrollUp),
         (KeyCode::Down, _) => Some(Action::ScrollDown),
         (KeyCode::PageUp, _) => {
@@ -256,6 +291,17 @@ fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> Option<Action>
             None
         }
         _ => None,
+    }
+}
+
+/// 更新状态栏：检测输入中的 @文件引用
+fn update_at_status(app: &mut App) {
+    let input = &app.active_tab().input_buffer;
+    if let Some(at_pos) = input.rfind('@') {
+        let after = &input[at_pos..];
+        if after.len() > 1 {
+            app.status_message = format!("@文件: {} — 按 Tab 自动补全", after);
+        }
     }
 }
 

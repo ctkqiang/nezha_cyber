@@ -237,6 +237,58 @@ pub fn parse_at_references(input: &str) -> (String, Vec<String>) {
     (cleaned.trim().to_string(), files)
 }
 
+/// 从当前目录扫描匹配前缀的文件列表（@ 自动补全用）
+///
+/// 返回最多 20 个匹配项，按名称排序。
+/// 前缀匹配优先，模糊包含其次。忽略隐藏文件和 target/node_modules。
+pub fn scan_files_for_autocomplete(prefix: &str) -> Vec<String> {
+    let base = cwd();
+    let Ok(entries) = std::fs::read_dir(&base) else {
+        return Vec::new();
+    };
+    let mut matches = Vec::new();
+    let lower = prefix.to_lowercase();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') || name == "target" || name == "node_modules" {
+            continue;
+        }
+        if name.to_lowercase().contains(&lower) {
+            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            matches.push(if is_dir { format!("{}/", name) } else { name });
+        }
+    }
+    matches.sort_by_key(|m| {
+        if m.to_lowercase().starts_with(&lower) {
+            (0u8, m.to_lowercase())
+        } else {
+            (1u8, m.to_lowercase())
+        }
+    });
+    matches.truncate(20);
+    matches
+}
+
+/// 检测输入中光标位置前的 @ 前缀（Tab 自动补全用）
+///
+/// 返回 (前缀文本, 是否在引号内)。
+pub fn detect_at_cursor(input: &str) -> Option<(String, bool)> {
+    if let Some(pos) = input.rfind('@') {
+        let after = &input[pos + 1..];
+        if after.starts_with('"') {
+            let inner = after.trim_start_matches('"');
+            let end = inner.find('"').unwrap_or(inner.len());
+            return Some((inner[..end].to_string(), true));
+        }
+        let end = after
+            .find(|c: char| c.is_whitespace())
+            .unwrap_or(after.len());
+        let prefix = &after[..end];
+        return Some((prefix.to_string(), false));
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
