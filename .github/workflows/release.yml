@@ -2,8 +2,6 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+*"
 
@@ -25,8 +23,14 @@ jobs:
             target: aarch64-unknown-linux-gnu
             suffix: linux-arm64
           - os: macos-latest
+            target: x86_64-apple-darwin
+            suffix: macos-amd64
+          - os: macos-latest
             target: aarch64-apple-darwin
             suffix: macos-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            suffix: windows-amd64
 
     steps:
       - uses: actions/checkout@v4
@@ -47,10 +51,19 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: 打包二进制 (Linux / macOS)
+        if: matrix.os != 'windows-latest'
         run: |
           cd target/${{ matrix.target }}/release
           tar -czf ${{ env.BINARY_NAME }}-${{ matrix.suffix }}.tar.gz ${{ env.BINARY_NAME }}
           sha256sum ${{ env.BINARY_NAME }}-${{ matrix.suffix }}.tar.gz > ${{ env.BINARY_NAME }}-${{ matrix.suffix }}.tar.gz.sha256
+
+      - name: 打包二进制 (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          7z a ${{ env.BINARY_NAME }}-${{ matrix.suffix }}.zip ${{ env.BINARY_NAME }}.exe
+          sha256sum ${{ env.BINARY_NAME }}-${{ matrix.suffix }}.zip > ${{ env.BINARY_NAME }}-${{ matrix.suffix }}.zip.sha256
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
@@ -59,6 +72,8 @@ jobs:
           path: |
             target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}-${{ matrix.suffix }}.tar.gz
             target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}-${{ matrix.suffix }}.tar.gz.sha256
+            target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}-${{ matrix.suffix }}.zip
+            target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}-${{ matrix.suffix }}.zip.sha256
           if-no-files-found: error
 
   github-release:
@@ -79,6 +94,7 @@ jobs:
         run: |
           mkdir -p dist
           find artifacts -name "*.tar.gz" -exec cp {} dist/ \;
+          find artifacts -name "*.zip" -exec cp {} dist/ \;
           find artifacts -name "*.sha256" -exec cp {} dist/ \;
           ls -la dist/
 
@@ -87,13 +103,16 @@ jobs:
           echo "## 安装" > release_notes.md
           echo "" >> release_notes.md
           echo '```bash' >> release_notes.md
-          echo "# 通过 cargo 安装" >> release_notes.md
+          echo "# cargo install (全平台)" >> release_notes.md
           echo "cargo install nezha_cyber" >> release_notes.md
           echo "" >> release_notes.md
-          echo "# 或从源码安装" >> release_notes.md
-          echo "git clone https://gitcode.com/ctkqiang_sr/nezha_cyber.git" >> release_notes.md
-          echo "cd nezha_cyber" >> release_notes.md
-          echo "cargo install --path ." >> release_notes.md
+          echo "# macOS" >> release_notes.md
+          echo "brew install nezha_cyber   # 规划中" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "# 下载预编译二进制" >> release_notes.md
+          echo "# Linux: tar -xzf nezha_cyber-linux-amd64.tar.gz" >> release_notes.md
+          echo "# macOS: tar -xzf nezha_cyber-macos-arm64.tar.gz" >> release_notes.md
+          echo "# Windows: 解压 nezha_cyber-windows-amd64.zip" >> release_notes.md
           echo '```' >> release_notes.md
           echo "" >> release_notes.md
           echo "## 校验" >> release_notes.md
@@ -101,9 +120,9 @@ jobs:
           echo "| 平台 | SHA256 |" >> release_notes.md
           echo "|------|--------|" >> release_notes.md
           for f in dist/*.sha256; do
-            PLATFORM=$(basename "$f" .tar.gz.sha256)
+            BASE=$(basename "$f" .sha256)
             HASH=$(cat "$f")
-            echo "| $PLATFORM | \`$HASH\` |" >> release_notes.md
+            echo "| $BASE | \`$HASH\` |" >> release_notes.md
           done
           echo "" >> release_notes.md
           echo "## 使用" >> release_notes.md

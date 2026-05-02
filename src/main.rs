@@ -9,15 +9,15 @@
 use std::env;
 use std::time::Duration;
 
-use nezha_cyber::action::Action;
-use nezha_cyber::agent::config::{AgentConfig, AgentsConfig, AppConfig};
-use nezha_cyber::app::{App, update as app_update};
-use nezha_cyber::tools::tool_definitions;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use nezha_cyber::action::Action;
+use nezha_cyber::agent::config::{AgentConfig, AgentsConfig, AppConfig};
+use nezha_cyber::app::{update as app_update, App};
+use nezha_cyber::tools::{extract_file_text, parse_at_references, tool_definitions};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use tokio::sync::mpsc;
@@ -179,18 +179,14 @@ fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> Option<Action>
                 };
                 Some(Action::ConfirmToolCall(c))
             }
-            KeyCode::Char('n') | KeyCode::Char('N') => {
-                Some(Action::RejectToolCall {
-                    tab_id: confirmation.tab_id,
-                    call_id: confirmation.call_id.clone(),
-                })
-            }
-            KeyCode::Esc => {
-                Some(Action::RejectToolCall {
-                    tab_id: confirmation.tab_id,
-                    call_id: confirmation.call_id.clone(),
-                })
-            }
+            KeyCode::Char('n') | KeyCode::Char('N') => Some(Action::RejectToolCall {
+                tab_id: confirmation.tab_id,
+                call_id: confirmation.call_id.clone(),
+            }),
+            KeyCode::Esc => Some(Action::RejectToolCall {
+                tab_id: confirmation.tab_id,
+                call_id: confirmation.call_id.clone(),
+            }),
             _ => None,
         };
     }
@@ -205,12 +201,30 @@ fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> Option<Action>
 
     match (key.code, key.modifiers) {
         (KeyCode::Enter, _) => {
-            let input = app.active_tab().input_buffer.clone();
-            if !input.trim().is_empty() {
-                Some(Action::SubmitMessage(input))
-            } else {
-                None
+            let raw = app.active_tab().input_buffer.clone();
+            if raw.trim().is_empty() {
+                return None;
             }
+            let (cleaned, files) = parse_at_references(&raw);
+            let mut final_input = cleaned;
+            if !files.is_empty() {
+                let mut file_contents = String::from("── 附件内容 ──\n");
+                for file in &files {
+                    let path = std::path::Path::new(file);
+                    match extract_file_text(path) {
+                        Ok(text) => {
+                            file_contents.push_str(&format!("\n[{}]\n{}\n", file, text));
+                        }
+                        Err(e) => {
+                            file_contents.push_str(&format!("\n[{}] 读取失败: {}\n", file, e));
+                            app.status_message = format!("{}: {}", file, e);
+                        }
+                    }
+                }
+                file_contents.push_str("── 附件结束 ──\n\n");
+                final_input = format!("{}{}", file_contents, final_input);
+            }
+            Some(Action::SubmitMessage(final_input))
         }
         (KeyCode::Char(c), m) if m == KeyModifiers::NONE || m == KeyModifiers::SHIFT => {
             app.active_tab_mut().input_buffer.push(c);
@@ -224,15 +238,14 @@ fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> Option<Action>
             app.active_tab_mut().input_buffer.push(' ');
             None
         }
-        (KeyCode::Esc, _) => {
-            None
-        }
+        (KeyCode::Esc, _) => None,
         (KeyCode::Up, _) => Some(Action::ScrollUp),
         (KeyCode::Down, _) => Some(Action::ScrollDown),
         (KeyCode::PageUp, _) => {
             for _ in 0..5 {
                 if app.active_tab().scroll_offset > 0 {
-                    app.active_tab_mut().scroll_offset = app.active_tab().scroll_offset.saturating_sub(1);
+                    app.active_tab_mut().scroll_offset =
+                        app.active_tab().scroll_offset.saturating_sub(1);
                 }
             }
             app.active_tab_mut().auto_scroll = false;

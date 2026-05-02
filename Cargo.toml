@@ -33,3 +33,4 @@ unicode-width = "0.2"
 anyhow = "1"
 dotenvy = "0.15"
 rusqlite = { version = "0.31", features = ["bundled"] }
+pdf-extract = "0.7"
