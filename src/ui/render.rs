@@ -186,9 +186,8 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
 
     for (idx, msg) in tab.messages.iter().enumerate() {
         let is_last = idx == tab.messages.len() - 1;
-        let is_thinking = is_last
-            && msg.role == crate::api::types::Role::Assistant
-            && msg.content.is_empty();
+        let is_thinking =
+            is_last && msg.role == crate::api::types::Role::Assistant && msg.content.is_empty();
 
         if is_thinking {
             let dots = match tab.thinking_ticks % 4 {
@@ -223,10 +222,7 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
             for raw_line in msg.content.lines() {
                 let wrapped = wrap_text(raw_line, max_width, "  ");
                 for wl in wrapped {
-                    all_lines.push(Line::from(Span::styled(
-                        wl,
-                        Style::default().fg(theme.fg),
-                    )));
+                    all_lines.push(Line::from(Span::styled(wl, Style::default().fg(theme.fg))));
                 }
             }
         }
@@ -365,7 +361,7 @@ fn render_command_palette(frame: &mut Frame, app: &App, layout: &AppLayout, them
 
     let all_commands = vec![
         ("/model", "切换模型  —  /model deepseek-v4-pro"),
-        ("/theme", "切换主题  —  /theme daylight"),
+        ("/theme", "切换主题  —  /theme dracula|gruvbox|nord|monokai|tokyo-night|catppuccin|one-dark|everforest|daylight"),
         ("/agent", "切换智能体  —  /agent 哪吒"),
         ("/save", "保存当前对话到记忆库"),
         ("/load", "从记忆库加载对话  —  /load <id>"),
@@ -397,12 +393,12 @@ fn render_command_palette(frame: &mut Frame, app: &App, layout: &AppLayout, them
         .borders(Borders::ALL)
         .border_type(BorderType::Plain)
         .border_style(Style::default().fg(theme.accent))
-        .title(Span::styled(" 输入命令 ", Style::default().fg(theme.accent)));
+        .title(Span::styled(
+            " 输入命令 ",
+            Style::default().fg(theme.accent),
+        ));
     let input_text = format!("> {}", app.command_palette_input);
-    frame.render_widget(
-        Paragraph::new(input_text).block(input_block),
-        chunks[0],
-    );
+    frame.render_widget(Paragraph::new(input_text).block(input_block), chunks[0]);
 
     let cmd_lines: Vec<Line> = filtered
         .iter()

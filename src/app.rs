@@ -484,7 +484,30 @@ pub fn update(app: &mut App, action: Action) -> bool {
                 app.client.set_model(model);
             } else if input.starts_with("/theme ") {
                 let theme = input[7..].trim().to_string();
-                app.theme = theme;
+                let valid_names: &[&str] = &[
+                    "default",
+                    "cyber-dark",
+                    "daylight",
+                    "light",
+                    "dracula",
+                    "gruvbox",
+                    "solarized-dark",
+                    "nord",
+                    "monokai",
+                    "tokyo-night",
+                    "catppuccin",
+                    "one-dark",
+                    "everforest",
+                ];
+                if valid_names.contains(&theme.as_str()) {
+                    app.theme = theme.clone();
+                    app.status_message = format!("主题已切换为: {}", theme);
+                } else {
+                    app.status_message = format!(
+                        "未知主题: {}. 可用: default, daylight, dracula, gruvbox, solarized-dark, nord, monokai, tokyo-night, catppuccin, one-dark, everforest",
+                        theme
+                    );
+                }
             } else if input.starts_with("/agent ") {
                 let agent = input[7..].trim().to_string();
                 if let Some(tab) = app.tabs.get_mut(app.active_tab) {
