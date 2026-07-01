@@ -14,7 +14,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
 };
 use unicode_width::UnicodeWidthStr;
@@ -239,7 +239,7 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let tab = app.active_tab();
     let max_width = area.width.saturating_sub(4) as usize;
     let visible = area.height as usize;
-    let mut all_lines: Vec<Line> = Vec::new();
+    let mut all_lines: Vec<Line<'static>> = Vec::new();
     all_lines.push(Line::from(""));
 
     for (idx, msg) in tab.messages.iter().enumerate() {
@@ -320,7 +320,7 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
 }
 
 fn render_user_message(
-    lines: &mut Vec<Line>,
+    lines: &mut Vec<Line<'static>>,
     msg: &crate::api::types::Message,
     max_width: usize,
     theme: &Theme,
@@ -350,9 +350,9 @@ fn render_user_message(
 }
 
 fn render_assistant_message(
-    lines: &mut Vec<Line>,
+    lines: &mut Vec<Line<'static>>,
     msg: &crate::api::types::Message,
-    tab: &crate::app::TabState,
+    tab: &crate::app::Tab,
     max_width: usize,
     theme: &Theme,
 ) {
@@ -411,7 +411,7 @@ fn render_assistant_message(
                 Span::styled(
                     " ".repeat(
                         40usize
-                            .saturating_sub(UnicodeWidthStr::width(tc.function.name.as_str()) + 6),
+                            .saturating_sub(tc.function.name.width() + 6),
                     ),
                     Style::default().fg(theme.border_color),
                 ),
@@ -426,12 +426,13 @@ fn render_assistant_message(
                 };
                 let wrapped = wrap_text(&args_preview, 36, "  ");
                 for wl in wrapped {
+                    let wl_width = wl.width();
                     lines.push(Line::from(vec![
                         Span::raw("    "),
                         Span::styled("│ ", Style::default().fg(theme.border_color)),
                         Span::styled(wl, Style::default().fg(theme.warning_color)),
                         Span::styled(
-                            " ".repeat(40usize.saturating_sub(UnicodeWidthStr::width(&wl))),
+                            " ".repeat(40usize.saturating_sub(wl_width)),
                             Style::default().fg(theme.border_color),
                         ),
                         Span::styled("│", Style::default().fg(theme.border_color)),
@@ -466,7 +467,7 @@ fn render_assistant_message(
 }
 
 fn render_system_message(
-    lines: &mut Vec<Line>,
+    lines: &mut Vec<Line<'static>>,
     msg: &crate::api::types::Message,
     max_width: usize,
     theme: &Theme,
@@ -493,7 +494,7 @@ fn render_system_message(
 }
 
 fn render_tool_result(
-    lines: &mut Vec<Line>,
+    lines: &mut Vec<Line<'static>>,
     msg: &crate::api::types::Message,
     max_width: usize,
     theme: &Theme,
@@ -529,20 +530,20 @@ fn render_tool_result(
 }
 
 /// 简易 Markdown 渲染：支持标题、粗体、代码、列表、引用
-fn render_markdown(lines: &mut Vec<Line>, content: &str, max_width: usize, theme: &Theme) {
+fn render_markdown(lines: &mut Vec<Line<'static>>, content: &str, max_width: usize, theme: &Theme) {
     let mut in_code_block = false;
-    let mut code_lang = String::new();
 
     for line in content.lines() {
         if line.starts_with("```") {
             if !in_code_block {
                 in_code_block = true;
-                code_lang = line.trim_start_matches('`').trim().to_string();
+                let code_lang = line.trim_start_matches('`').trim();
                 let lang_label = if code_lang.is_empty() {
                     " code ".into()
                 } else {
                     format!(" {} ", code_lang)
                 };
+                let code_lang_len = code_lang.len();
                 lines.push(Line::from(vec![
                     Span::raw("    "),
                     Span::styled("╭──", Style::default().fg(theme.border_color)),
@@ -554,7 +555,7 @@ fn render_markdown(lines: &mut Vec<Line>, content: &str, max_width: usize, theme
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(
-                        "─".repeat(max_width.saturating_sub(code_lang.len() + 12)),
+                        "─".repeat(max_width.saturating_sub(code_lang_len + 12)),
                         Style::default().fg(theme.border_color),
                     ),
                     Span::styled("╮", Style::default().fg(theme.border_color)),
@@ -573,12 +574,14 @@ fn render_markdown(lines: &mut Vec<Line>, content: &str, max_width: usize, theme
         }
 
         if in_code_block {
+            let line_owned = line.to_string();
+            let line_width = line_owned.width();
             lines.push(Line::from(vec![
                 Span::raw("    "),
                 Span::styled("│ ", Style::default().fg(theme.border_color)),
-                Span::styled(line, Style::default().fg(theme.warning_color)),
+                Span::styled(line_owned, Style::default().fg(theme.warning_color)),
                 Span::styled(
-                    " ".repeat(max_width.saturating_sub(UnicodeWidthStr::width(line) + 4)),
+                    " ".repeat(max_width.saturating_sub(line_width + 4)),
                     Style::default().fg(theme.border_color),
                 ),
                 Span::styled("│", Style::default().fg(theme.border_color)),
@@ -588,6 +591,7 @@ fn render_markdown(lines: &mut Vec<Line>, content: &str, max_width: usize, theme
 
         if line.starts_with("# ") {
             let text = line.trim_start_matches("# ").to_string();
+            let text_width = text.width();
             lines.push(Line::from(""));
             lines.push(Line::from(vec![
                 Span::raw("    "),
@@ -601,7 +605,7 @@ fn render_markdown(lines: &mut Vec<Line>, content: &str, max_width: usize, theme
             lines.push(Line::from(vec![
                 Span::raw("    "),
                 Span::styled(
-                    "─".repeat(UnicodeWidthStr::width(&text).min(max_width)),
+                    "─".repeat(text_width.min(max_width)),
                     Style::default().fg(theme.accent_dim),
                 ),
             ]));
@@ -632,7 +636,7 @@ fn render_markdown(lines: &mut Vec<Line>, content: &str, max_width: usize, theme
                     Span::raw("      "),
                     Span::styled(bullet, Style::default().fg(theme.accent)),
                     Span::raw(" "),
-                    Span::styled(wl, Style::default().fg(theme.fg)),
+                    Span::styled(wl.clone(), Style::default().fg(theme.fg)),
                 ]));
             }
             continue;
@@ -672,8 +676,8 @@ fn render_markdown(lines: &mut Vec<Line>, content: &str, max_width: usize, theme
 }
 
 /// 行内 Markdown：**粗体**、`代码`
-fn render_inline_markdown(text: &str, theme: &Theme) -> Vec<Span<'_>> {
-    let mut spans: Vec<Span> = Vec::new();
+fn render_inline_markdown(text: &str, theme: &Theme) -> Vec<Span<'static>> {
+    let mut spans: Vec<Span<'static>> = Vec::new();
     let mut remaining = text;
 
     while !remaining.is_empty() {
@@ -688,7 +692,9 @@ fn render_inline_markdown(text: &str, theme: &Theme) -> Vec<Span<'_>> {
             if let Some(end) = after_start.find("**") {
                 spans.push(Span::styled(
                     after_start[..end].to_string(),
-                    Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(theme.fg)
+                        .add_modifier(Modifier::BOLD),
                 ));
                 remaining = &after_start[end + 2..];
             } else {
@@ -712,9 +718,7 @@ fn render_inline_markdown(text: &str, theme: &Theme) -> Vec<Span<'_>> {
             if let Some(end) = after_start.find('`') {
                 spans.push(Span::styled(
                     format!(" {} ", &after_start[..end]),
-                    Style::default()
-                        .fg(theme.warning_color)
-                        .bg(theme.border_color),
+                    Style::default().fg(theme.warning_color).bg(theme.border_color),
                 ));
                 remaining = &after_start[end + 1..];
             } else {
@@ -736,15 +740,7 @@ fn render_inline_markdown(text: &str, theme: &Theme) -> Vec<Span<'_>> {
 
 fn render_input_area(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let is_focused = app.focus == Focus::ChatInput;
-    let border_color = if is_focused {
-        theme.accent
-    } else {
-        theme.border_color
-    };
-
-    let lines_count = app.active_tab().input_buffer.lines().count().max(1);
-    let cursor_line = app.active_tab().cursor_line;
-    let cursor_col = app.active_tab().cursor_col;
+    let border_color = if is_focused { theme.accent } else { theme.border_color };
 
     let input_block = Block::default()
         .borders(Borders::ALL)
@@ -763,60 +759,38 @@ fn render_input_area(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let inner = input_block.inner(area);
 
     let input_text = &app.active_tab().input_buffer;
-    let mut input_lines: Vec<Line> = Vec::new();
-    let display_lines: Vec<&str> = input_text.lines().collect();
-    let display_lines = if display_lines.is_empty() {
-        vec![""]
-    } else {
-        display_lines
-    };
 
-    for (i, line_text) in display_lines.iter().enumerate() {
+    let mut input_lines: Vec<Line<'static>> = Vec::new();
+    for (i, line_text) in input_text.lines().enumerate() {
         let line_num = format!(" {:>2} ", i + 1);
         let mut spans = vec![Span::styled(
             line_num,
             Style::default().fg(theme.accent_dim).bg(theme.sidebar_bg),
         )];
-
-        if line_text.is_empty() {
-            spans.push(Span::raw(" "));
-        } else {
-            spans.push(Span::raw(format!(" {}", line_text)));
-        }
+        spans.push(Span::raw(format!(" {}", line_text)));
         input_lines.push(Line::from(spans));
     }
 
     if input_lines.is_empty() {
-        input_lines.push(Line::from(""));
+        input_lines.push(Line::from(vec![
+            Span::styled("  1 ", Style::default().fg(theme.accent_dim).bg(theme.sidebar_bg)),
+            Span::raw(" "),
+        ]));
     }
 
     frame.render_widget(input_block, area);
-
-    let scroll_top = if lines_count > inner.height as usize {
-        cursor_line.saturating_sub(inner.height as usize / 2)
-    } else {
-        0
-    };
-
-    let visible_lines: Vec<Line> = input_lines
-        .into_iter()
-        .skip(scroll_top)
-        .take(inner.height as usize)
-        .collect();
-
     frame.render_widget(
-        Paragraph::new(Text::from(visible_lines)).style(Style::default().bg(theme.input_bg)),
+        Paragraph::new(Text::from(input_lines))
+            .style(Style::default().bg(theme.input_bg)),
         inner,
     );
 
     if is_focused {
-        let display_cursor_line = cursor_line.saturating_sub(scroll_top) as u16;
-        if display_cursor_line < inner.height {
-            let cursor_x = inner.x + 4 + cursor_col.min(100) as u16;
-            let cursor_y = inner.y + display_cursor_line;
-            if cursor_y < area.y + area.height && cursor_x < area.x + area.width {
-                frame.set_cursor_position((cursor_x, cursor_y));
-            }
+        let input_len = app.active_tab().input_buffer.len();
+        let cursor_x = inner.x + 4 + (input_len % (inner.width as usize - 4)) as u16;
+        let cursor_y = inner.y + (input_len / (inner.width as usize - 4)) as u16;
+        if cursor_y < area.y + area.height && cursor_x < area.x + area.width {
+            frame.set_cursor_position((cursor_x, cursor_y));
         }
     }
 }
@@ -916,12 +890,12 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let left_width: usize = left_line
         .spans
         .iter()
-        .map(|s| UnicodeWidthStr::width(s.content.as_str()))
+        .map(|s| s.content.width())
         .sum();
     let right_width: usize = right_line
         .spans
         .iter()
-        .map(|s| UnicodeWidthStr::width(s.content.as_str()))
+        .map(|s| s.content.width())
         .sum();
 
     let padding = total_width.saturating_sub(left_width + right_width);
@@ -1015,16 +989,14 @@ fn render_command_palette(frame: &mut Frame, app: &App, layout: &AppLayout, them
 
     let list_area = chunks[1];
     let max_items = list_area.height as usize;
-    let selected = app
-        .command_palette_selected
-        .min(filtered.len().saturating_sub(1));
+    let selected = 0usize.min(filtered.len().saturating_sub(1));
     let scroll = if filtered.len() > max_items {
         selected.saturating_sub(max_items / 2)
     } else {
         0
     };
 
-    let mut list_lines: Vec<Line> = Vec::new();
+    let mut list_lines: Vec<Line<'static>> = Vec::new();
     for (i, (cmd, desc, _detail)) in filtered.iter().enumerate().skip(scroll).take(max_items) {
         let is_selected = i == selected;
         let style = if is_selected {
@@ -1069,17 +1041,17 @@ fn render_command_palette(frame: &mut Frame, app: &App, layout: &AppLayout, them
 }
 
 fn render_confirmation_dialog(frame: &mut Frame, app: &App, theme: &Theme) {
-    let Some(ref dialog) = app.confirmation_dialog else {
+    let Some(ref dialog) = app.pending_confirmation else {
         return;
     };
 
-    let title = &dialog.title;
+    let title = "工具调用确认";
     let desc = &dialog.description;
 
     let area = frame.area();
     let dialog_width = 60.min(area.width.saturating_sub(4));
     let lines_count = (desc.len() / (dialog_width as usize - 4)).max(2) + 6;
-    let dialog_height = lines_count.min(area.height.saturating_sub(4)) as u16;
+    let dialog_height = lines_count.min(area.height.saturating_sub(4) as usize) as u16;
 
     let dialog_area = Rect {
         x: area.x + (area.width - dialog_width) / 2,
@@ -1110,7 +1082,7 @@ fn render_confirmation_dialog(frame: &mut Frame, app: &App, theme: &Theme) {
     frame.render_widget(block, dialog_area);
 
     let wrapped = wrap_text(desc, inner.width.saturating_sub(2) as usize, "");
-    let mut msg_lines: Vec<Line> = Vec::new();
+    let mut msg_lines: Vec<Line<'static>> = Vec::new();
     for wl in wrapped {
         msg_lines.push(Line::from(vec![
             Span::raw("  "),
@@ -1142,7 +1114,7 @@ fn wrap_text(text: &str, max_width: usize, prefix: &str) -> Vec<String> {
     if max_width == 0 {
         return vec![text.to_string()];
     }
-    let effective_width = max_width.saturating_sub(UnicodeWidthStr::width(prefix));
+    let effective_width = max_width.saturating_sub(prefix.width());
     let effective_width = effective_width.max(10);
 
     let mut result = Vec::new();
@@ -1154,7 +1126,7 @@ fn wrap_text(text: &str, max_width: usize, prefix: &str) -> Vec<String> {
         let mut current = String::new();
         let mut current_width = 0;
         for ch in para_line.chars() {
-            let w = UnicodeWidthStr::width(ch.to_string().as_str());
+            let w = ch.to_string().width();
             if current_width + w > effective_width && !current.is_empty() {
                 result.push(format!("{}{}", prefix, current));
                 current.clear();
