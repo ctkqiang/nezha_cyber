@@ -1,4 +1,3 @@
-
 //! 工具执行器 —— 解析 tool_call 参数并执行本地操作。
 //!
 //! 支持的工具：write_file、read_file、create_directory、list_directory、search_files。
@@ -10,15 +9,15 @@ use std::fs;
 use std::path::PathBuf;
 
 fn ensure_safe(base: &PathBuf, target: &PathBuf) -> Result<PathBuf, String> {
-    let canonical_base = base.canonicalize().map_err(|e| format!("基础路径不可访问: {}", e))?;
+    let canonical_base = base
+        .canonicalize()
+        .map_err(|e| format!("基础路径不可访问: {}", e))?;
     let resolved = if target.is_relative() {
         canonical_base.join(target)
     } else {
         target.clone()
     };
-    let canonical = resolved
-        .canonicalize()
-        .unwrap_or_else(|_| resolved.clone());
+    let canonical = resolved.canonicalize().unwrap_or_else(|_| resolved.clone());
     if !canonical.starts_with(&canonical_base) {
         return Err(format!("路径越界: {}", canonical.display()));
     }
@@ -153,7 +152,11 @@ fn exec_read_file(args: &str) -> String {
             Ok(content) => {
                 let truncated = if content.lines().count() > 200 {
                     let shortened: Vec<&str> = content.lines().take(200).collect();
-                    format!("{}\n... (已截断，共 {} 行)", shortened.join("\n"), content.lines().count())
+                    format!(
+                        "{}\n... (已截断，共 {} 行)",
+                        shortened.join("\n"),
+                        content.lines().count()
+                    )
                 } else {
                     content
                 };
@@ -200,12 +203,20 @@ fn exec_list_directory(args: &str) -> String {
             Ok(entries) => {
                 let mut items = Vec::new();
                 for entry in entries.flatten() {
-                    let ft = entry.file_type().map(|t| if t.is_dir() { "/" } else { "" }).unwrap_or("");
+                    let ft = entry
+                        .file_type()
+                        .map(|t| if t.is_dir() { "/" } else { "" })
+                        .unwrap_or("");
                     let name = entry.file_name().to_string_lossy().into_owned();
                     items.push(format!("  {}{}", name, ft));
                 }
                 items.sort();
-                format!("{} ({} 项):\n{}", args.path.as_deref().unwrap_or("."), items.len(), items.join("\n"))
+                format!(
+                    "{} ({} 项):\n{}",
+                    args.path.as_deref().unwrap_or("."),
+                    items.len(),
+                    items.join("\n")
+                )
             }
             Err(e) => format!("列出目录失败: {}", e),
         },

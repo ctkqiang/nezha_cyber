@@ -1,6 +1,5 @@
-
 //! SQLite 数据库连接管理与 CRUD 操作。
-//!
+
 //! 使用 rusqlite (bundled) 内嵌 SQLite，无需系统安装。
 //! 数据库文件存储在用户当前目录下的 `.nezha_memory.db`。
 
