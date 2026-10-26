@@ -5,3 +5,4 @@ deploy.sh
 .nezha_memory.db
 .nezha_memory.db-shm
 .nezha_memory.db-wal
+/exports

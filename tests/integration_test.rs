@@ -31,6 +31,12 @@ fn test_agents() -> Vec<AgentConfig> {
 }
 
 fn make_app() -> App {
+    use std::sync::Once;
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        // 每个 App 使用独立的内存库，避免并行测试争用同一个 SQLite 文件。
+        std::env::set_var("NEZHA_MEMORY_DB", ":memory:");
+    });
     App::new(test_agents(), test_app_config())
 }
 
@@ -96,6 +102,7 @@ fn full_conversation_flow() {
                 completion_tokens: 80,
                 total_tokens: 280,
             },
+            has_tool_calls: false,
         },
     );
 

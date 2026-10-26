@@ -239,30 +239,62 @@ pub fn parse_at_references(input: &str) -> (String, Vec<String>) {
 
 /// 从当前目录扫描匹配前缀的文件列表（@ 自动补全用）
 ///
-/// 返回最多 20 个匹配项，按名称排序。
-/// 前缀匹配优先，模糊包含其次。忽略隐藏文件和 target/node_modules。
+/// 支持子目录：`@src/ma` 会在 `src/` 下补全 `src/main.rs`。
+/// 返回最多 20 个匹配项，前缀匹配优先，模糊包含其次。
+/// 忽略隐藏文件、target 与 node_modules，并拒绝越界路径。
 pub fn scan_files_for_autocomplete(prefix: &str) -> Vec<String> {
-    let base = cwd();
-    let Ok(entries) = std::fs::read_dir(&base) else {
+    scan_files_in(&cwd(), prefix)
+}
+
+fn scan_files_in(base: &Path, prefix: &str) -> Vec<String> {
+    if prefix.starts_with('/') || prefix.split('/').any(|part| part == "..") {
+        return Vec::new();
+    }
+
+    let (parent, name_prefix) = match prefix.rsplit_once('/') {
+        Some((parent, name)) => (parent, name),
+        None => ("", prefix),
+    };
+    let directory = if parent.is_empty() {
+        base.to_path_buf()
+    } else {
+        base.join(parent)
+    };
+
+    let Ok(entries) = std::fs::read_dir(&directory) else {
         return Vec::new();
     };
+
+    let lower = name_prefix.to_lowercase();
+    let prefix_lower = prefix.to_lowercase();
     let mut matches = Vec::new();
-    let lower = prefix.to_lowercase();
+
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         if name.starts_with('.') || name == "target" || name == "node_modules" {
             continue;
         }
-        if name.to_lowercase().contains(&lower) {
-            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
-            matches.push(if is_dir { format!("{}/", name) } else { name });
+        if !name.to_lowercase().contains(&lower) {
+            continue;
         }
-    }
-    matches.sort_by_key(|m| {
-        if m.to_lowercase().starts_with(&lower) {
-            (0u8, m.to_lowercase())
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        let mut display = if parent.is_empty() {
+            name
         } else {
-            (1u8, m.to_lowercase())
+            format!("{}/{}", parent, name)
+        };
+        if is_dir {
+            display.push('/');
+        }
+        matches.push(display);
+    }
+
+    matches.sort_by_key(|candidate| {
+        let lower_candidate = candidate.to_lowercase();
+        if lower_candidate.starts_with(&prefix_lower) {
+            (0u8, lower_candidate)
+        } else {
+            (1u8, lower_candidate)
         }
     });
     matches.truncate(20);
@@ -343,5 +375,61 @@ mod tests {
     fn truncate_short_content() {
         let text = "hello\nworld";
         assert_eq!(truncate_content(text), "hello\nworld");
+    }
+}
+
+#[cfg(test)]
+mod autocomplete_tests {
+    use super::scan_files_in;
+    use std::path::PathBuf;
+
+    fn temp_dir() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "nezha-autocomplete-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("src/nested")).unwrap();
+        std::fs::write(dir.join("README.md"), "readme").unwrap();
+        std::fs::write(dir.join("src/main.rs"), "fn main() {}").unwrap();
+        std::fs::write(dir.join("src/lib.rs"), "").unwrap();
+        dir
+    }
+
+    #[test]
+    fn completes_top_level_files() {
+        let dir = temp_dir();
+        let matches = scan_files_in(&dir, "RE");
+        assert!(matches.contains(&"README.md".to_string()));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn completes_nested_directory() {
+        let dir = temp_dir();
+        let matches = scan_files_in(&dir, "src/");
+        assert!(matches.contains(&"src/main.rs".to_string()));
+        assert!(matches.contains(&"src/lib.rs".to_string()));
+        assert!(matches.contains(&"src/nested/".to_string()));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn filters_nested_prefix() {
+        let dir = temp_dir();
+        let matches = scan_files_in(&dir, "src/ma");
+        assert_eq!(matches, vec!["src/main.rs".to_string()]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn rejects_parent_traversal() {
+        let dir = temp_dir();
+        assert!(scan_files_in(&dir, "../etc").is_empty());
+        assert!(scan_files_in(&dir, "/etc").is_empty());
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

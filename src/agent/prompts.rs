@@ -575,10 +575,13 @@ mod tests {
             REDTEAM_COMMANDER_SYSTEM,
         ];
         for prompt in all_prompts {
-            let chinese_chars: usize = prompt.chars().filter(|c| c.is_ascii()).count();
-            let total_chars = prompt.chars().count();
-            let chinese_ratio = 1.0 - (chinese_chars as f64 / total_chars as f64);
-            assert!(chinese_ratio > 0.5, "提示词应该主要是中文");
+            // 提示词里会大量出现工具名、命令、CVE 编号等 ASCII 内容，
+            // 因此用「中文正文字符数」而不是 ASCII 占比来判断语言。
+            let cjk_chars = prompt
+                .chars()
+                .filter(|c| ('\u{4e00}'..='\u{9fff}').contains(c))
+                .count();
+            assert!(cjk_chars >= 30, "提示词应该包含足够的中文正文");
         }
     }
 }

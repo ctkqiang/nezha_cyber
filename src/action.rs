@@ -30,11 +30,14 @@ pub enum Action {
     CloseTab(usize),
     ToggleSidebar,
     OpenCommandPalette,
+    ToggleHelp,
+    CancelStream,
 
     // ---- 系统事件 ----
     Tick,
     Resize(u16, u16),
     Shutdown,
+    BalanceUpdated(Result<f64, String>),
 
     // ---- 流式 API 响应 ----
     StreamStart {
@@ -51,6 +54,8 @@ pub enum Action {
         message_id: Uuid,
         content: String,
         usage: Usage,
+        /// 本轮是否包含工具调用（用于避免误显示「空响应」）
+        has_tool_calls: bool,
     },
     StreamError {
         tab_id: usize,
@@ -82,6 +87,9 @@ pub enum Action {
     // ---- 消息列表滚动 ----
     ScrollUp,
     ScrollDown,
+    ScrollPageUp,
+    ScrollPageDown,
+    ScrollToTop,
     AutoScroll,
 
     // ---- 模型与主题切换 ----

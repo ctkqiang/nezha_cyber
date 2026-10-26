@@ -6,16 +6,16 @@
 use crate::agent::config::AgentToolConfig;
 use serde::Deserialize;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-fn ensure_safe(base: &PathBuf, target: &PathBuf) -> Result<PathBuf, String> {
+fn ensure_safe(base: &Path, target: &Path) -> Result<PathBuf, String> {
     let canonical_base = base
         .canonicalize()
         .map_err(|e| format!("基础路径不可访问: {}", e))?;
     let resolved = if target.is_relative() {
         canonical_base.join(target)
     } else {
-        target.clone()
+        target.to_path_buf()
     };
     let canonical = resolved.canonicalize().unwrap_or_else(|_| resolved.clone());
     if !canonical.starts_with(&canonical_base) {

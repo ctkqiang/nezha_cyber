@@ -8,7 +8,11 @@ use std::path::PathBuf;
 
 use crate::api::types::{Message, Role, ToolCall};
 
+#[cfg_attr(test, allow(dead_code))]
 fn db_path() -> PathBuf {
+    if let Ok(path) = std::env::var("NEZHA_MEMORY_DB") {
+        return PathBuf::from(path);
+    }
     std::env::current_dir()
         .unwrap_or_default()
         .join(".nezha_memory.db")
@@ -68,7 +72,13 @@ pub struct MemoryStore {
 impl MemoryStore {
     /// 打开或创建数据库连接并执行迁移
     pub fn open() -> SqliteResult<Self> {
+        // 单元测试使用内存数据库，避免污染工作目录里的真实记忆库。
+        #[cfg(test)]
+        let conn = Connection::open_in_memory()?;
+        #[cfg(not(test))]
         let conn = Connection::open(db_path())?;
+
+        conn.busy_timeout(std::time::Duration::from_secs(3))?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
         conn.execute_batch(SCHEMA)?;
         Ok(Self { conn })
@@ -131,9 +141,9 @@ impl MemoryStore {
         let mut messages = Vec::new();
         for row in rows {
             let (role_str, content, tool_calls_json, tool_call_id) = row?;
-            let role = Role::from_str(&role_str);
-            let tool_calls = tool_calls_json
-                .and_then(|s| serde_json::from_str::<Vec<ToolCall>>(&s).ok());
+            let role = Role::parse(&role_str);
+            let tool_calls =
+                tool_calls_json.and_then(|s| serde_json::from_str::<Vec<ToolCall>>(&s).ok());
 
             messages.push(Message {
                 id: uuid::Uuid::new_v4(),
@@ -179,8 +189,10 @@ impl MemoryStore {
 
     /// 删除指定对话及其所有消息
     pub fn delete_conversation(&self, conversation_id: i64) -> SqliteResult<()> {
-        self.conn
-            .execute("DELETE FROM conversations WHERE id = ?1", params![conversation_id])?;
+        self.conn.execute(
+            "DELETE FROM conversations WHERE id = ?1",
+            params![conversation_id],
+        )?;
         Ok(())
     }
 
@@ -245,7 +257,7 @@ impl MemoryStore {
 
 /// Role 辅助方法
 impl Role {
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s {
             "user" => Role::User,
             "assistant" => Role::Assistant,
@@ -293,7 +305,10 @@ mod tests {
         assert_eq!(loaded[0].role, Role::User);
         assert_eq!(loaded[0].content, "你好");
         assert_eq!(loaded[1].role, Role::Assistant);
-        assert_eq!(loaded[3].content, "22端口开放SSH，80端口开放HTTP，建议关闭22或限制IP访问");
+        assert_eq!(
+            loaded[3].content,
+            "22端口开放SSH，80端口开放HTTP，建议关闭22或限制IP访问"
+        );
     }
 
     #[test]
@@ -303,7 +318,12 @@ mod tests {
             .save_conversation("会话A", "哪吒", "deepseek-v4-pro", &sample_messages())
             .unwrap();
         store
-            .save_conversation("会话B", "代码审计专家", "deepseek-v4-pro", &sample_messages())
+            .save_conversation(
+                "会话B",
+                "代码审计专家",
+                "deepseek-v4-pro",
+                &sample_messages(),
+            )
             .unwrap();
 
         let list = store.list_conversations().unwrap();
@@ -377,15 +397,15 @@ mod tests {
 
     #[test]
     fn role_from_str_all_variants() {
-        assert_eq!(Role::from_str("user"), Role::User);
-        assert_eq!(Role::from_str("assistant"), Role::Assistant);
-        assert_eq!(Role::from_str("system"), Role::System);
-        assert_eq!(Role::from_str("tool"), Role::Tool);
+        assert_eq!(Role::parse("user"), Role::User);
+        assert_eq!(Role::parse("assistant"), Role::Assistant);
+        assert_eq!(Role::parse("system"), Role::System);
+        assert_eq!(Role::parse("tool"), Role::Tool);
     }
 
     #[test]
     fn role_from_str_unknown_defaults_to_user() {
-        assert_eq!(Role::from_str("invalid_role"), Role::User);
+        assert_eq!(Role::parse("invalid_role"), Role::User);
     }
 
     #[test]

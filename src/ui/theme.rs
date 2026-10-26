@@ -286,6 +286,21 @@ pub const ALL_THEME_NAMES: &[&str] = &[
     "everforest",
 ];
 
+/// `/theme` 无参数时循环切换所用的主题顺序（跳过别名，避免重复观感）。
+pub const CYCLE_THEMES: &[&str] = &[
+    "cyber-dark",
+    "tokyo-night",
+    "catppuccin",
+    "dracula",
+    "nord",
+    "one-dark",
+    "gruvbox",
+    "everforest",
+    "monokai",
+    "solarized-dark",
+    "daylight",
+];
+
 /// 根据名称获取主题
 ///
 /// 支持 11 种内置主题，未知名称回退到 cyber-dark。
@@ -433,8 +448,17 @@ mod tests {
     #[test]
     fn all_themes_have_different_backgrounds() {
         let names = [
-            "default", "daylight", "dracula", "gruvbox", "solarized-dark",
-            "nord", "monokai", "tokyo-night", "catppuccin", "one-dark", "everforest",
+            "default",
+            "daylight",
+            "dracula",
+            "gruvbox",
+            "solarized-dark",
+            "nord",
+            "monokai",
+            "tokyo-night",
+            "catppuccin",
+            "one-dark",
+            "everforest",
         ];
         let mut seen = std::collections::HashSet::new();
         for name in &names {
